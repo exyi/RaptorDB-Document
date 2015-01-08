@@ -7,6 +7,7 @@ using System.Reflection;
 using System.IO;
 using System.Threading.Tasks;
 using System.Threading;
+using System.Linq.Expressions;
 
 namespace RaptorDB
 {
@@ -46,7 +47,7 @@ namespace RaptorDB
         private MethodInfo register = null;
         private MethodInfo save = null;
         private SafeDictionary<Type, MethodInfo> _savecache = new SafeDictionary<Type, MethodInfo>();
-        private SafeDictionary<string, ServerSideFunc> _ssidecache = new SafeDictionary<string, ServerSideFunc>();
+        private SafeDictionary<string, ServerSideFuncInfo> _ssidecache = new SafeDictionary<string, ServerSideFuncInfo>();
 
         private Assembly CurrentDomain_AssemblyResolve(object sender, ResolveEventArgs args)
         {
@@ -153,7 +154,7 @@ namespace RaptorDB
                     case "serverside":
                         param = (object[])p.Data;
                         ret.OK = true;
-                        ret.Data = _raptor.ServerSide(GetServerSideFuncCache(param[0].ToString(), param[1].ToString()), param[2].ToString());
+                        ret.Data = _raptor.ServerSide(GetServerSideFuncCache(param[0].ToString(), param[1].ToString()).GetFunc(param[2]), param[3].ToString());
                         break;
                     case "fulltext":
                         param = (object[])p.Data;
@@ -247,15 +248,39 @@ namespace RaptorDB
             return ret;
         }
 
-        private ServerSideFunc GetServerSideFuncCache(string type, string method)
+        public delegate List<object> ServerSideFuncAnonymous(object target, IRaptorDB rap, string filter);
+        public class ServerSideFuncInfo
         {
-            ServerSideFunc func;
+            public ServerSideFunc StaticFunc { get; set; }
+            public ServerSideFuncAnonymous InstanceFunc { get; set; }
+
+            public ServerSideFunc GetFunc(object target = null)
+            {
+                return StaticFunc ?? ((rap, filter) => InstanceFunc(target, rap, filter));
+            }
+        }
+        private ServerSideFuncInfo GetServerSideFuncCache(string type, string method)
+        {
+            ServerSideFuncInfo func;
             log.Debug("Calling Server side Function : " + method + " on type " + type);
             if (_ssidecache.TryGetValue(type + method, out func) == false)
             {
+                func = new ServerSideFuncInfo();
                 Type tt = Type.GetType(type);
-
-                func = (ServerSideFunc)Delegate.CreateDelegate(typeof(ServerSideFunc), tt, method);
+                var methodInfo = Type.GetType(type).GetMethod(method, new[] { typeof(IRaptorDB), typeof(string) });
+                if (!methodInfo.IsStatic)
+                {
+                    var targetParEx = Expression.Parameter(typeof(object), "target");
+                    var rapParEx = Expression.Parameter(typeof(IRaptorDB), "rap");
+                    var filterParEx = Expression.Parameter(typeof(string), "filter");
+                    var callEx = Expression.Call(Expression.Convert(targetParEx, methodInfo.DeclaringType), methodInfo, rapParEx, filterParEx);
+                    func.InstanceFunc = Expression.Lambda<ServerSideFuncAnonymous>(callEx, targetParEx, rapParEx, filterParEx).Compile();
+                }
+                else
+                {
+                    var coreF = func.StaticFunc = (ServerSideFunc)Delegate.CreateDelegate(typeof(ServerSideFunc), methodInfo);
+                    func.InstanceFunc = (t, r, f) => coreF(r, f);
+                }
                 _ssidecache.Add(type + method, func);
             }
             return func;

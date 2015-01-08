@@ -199,7 +199,7 @@ namespace RaptorDB
         {
             Packet p = CreatePacket();
             p.Command = "serverside";
-            p.Data = new object[] { func.Method.ReflectedType.AssemblyQualifiedName, func.Method.Name, filter };
+            p.Data = new object[] { func.Method.ReflectedType.AssemblyQualifiedName, func.Method.Name, func.Target, filter };
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
             return (object[])ret.Data;
         }
@@ -218,7 +218,7 @@ namespace RaptorDB
 
             Packet p = CreatePacket();
             p.Command = "serverside";
-            p.Data = new object[] { func.Method.ReflectedType.AssemblyQualifiedName, func.Method.Name, ls.sb.ToString() };
+            p.Data = new object[] { func.Method.ReflectedType.AssemblyQualifiedName, func.Method.Name, func.Target, ls.sb.ToString() };
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
             return (object[])ret.Data;
         }

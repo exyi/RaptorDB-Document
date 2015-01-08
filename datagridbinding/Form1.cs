@@ -10,6 +10,7 @@ using RaptorDB;
 using RaptorDB.Common;
 using SampleViews;
 using System.Linq.Expressions;
+using Views;
 
 namespace datagridbinding
 {
@@ -150,7 +151,7 @@ namespace datagridbinding
         private void serverSideSumQueryToolStripMenuItem_Click(object sender, EventArgs e)
         {
             //string prod1 = "prod 1";
-            objclass c = new objclass() { val = "prod 3" };
+            objclass c = new objclass() { val = "prod 1" };
             //decimal i = 20;
 
             //var q = rap.Count(typeof(SalesItemRowsView), 
@@ -159,11 +160,12 @@ namespace datagridbinding
 
             DateTime dt = FastDateTime.Now;
 
-            var qq = rap.ServerSide<LineItem>(Views.ServerSide.Sum_Products_based_on_filter,
-                //"product = \"prod 1\""
-                //(LineItem l) => (l.Product == c.val || l.Product == prod3 ) 
-                x => x.Product == c.val || x.Product == prod3
-                ).ToList();
+            //var qq = rap.ServerSide<LineItem>((r, filter) => Views.ServerSide.Sum_Products_based_on_filter(r, filter),
+            //    //"product = \"prod 1\""
+            //    //(LineItem l) => (l.Product == c.val || l.Product == prod3 ) 
+            //    x => x.Product == c.val || x.Product == prod3
+            //    ).ToList();
+            var qq = ServerSide.DoServerSideSumOnRaptor(rap, prod3);
             dataGridView1.DataSource = qq;
             toolStripStatusLabel2.Text = "Query time (sec) = " + FastDateTime.Now.Subtract(dt).TotalSeconds;
             toolStripStatusLabel1.Text = "Count = " + qq.Count.ToString("#,0");
