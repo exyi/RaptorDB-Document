@@ -97,6 +97,7 @@ namespace datagridbinding
         private object _lock = new object();
         private void insert100000DocumentsToolStripMenuItem_Click(object sender, EventArgs e)
         {
+            //RaptorDB.Global.SplitStorageFilesMegaBytes = 50;
             lock (_lock)
             {
                 DialogResult dr = MessageBox.Show("Do you want to insert?", "Continue?", MessageBoxButtons.OKCancel, MessageBoxIcon.Stop, MessageBoxDefaultButton.Button2);
