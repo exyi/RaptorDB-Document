@@ -1128,6 +1128,7 @@ namespace RaptorDB
         }
 
         private object _slock = new object();
+        private int _saveprocessing = 0;
         private void _saveTimer_Elapsed(object sender, System.Timers.ElapsedEventArgs e)
         {
             if (_shuttingdown)
@@ -1142,14 +1143,18 @@ namespace RaptorDB
             if (_CurrentRecordNumber == _LastRecordNumberProcessed)
                 return;
 
-            lock (_slock)
+            if (!Monitor.TryEnter(_slock, (int)_saveTimer.Interval)) return;
+            try
             {
-                int batch = Global.BackgroundViewSaveBatchSize;
+            	int batch = Global.BackgroundViewSaveBatchSize;
                 while (batch > 0)
                 {
                     if (_shuttingdown)
                         return;
-                    while (_pauseindexer) Thread.Sleep(0);
+                    int i = 0;
+                    while (_pauseindexer && i++ < 5) Thread.Sleep(0);
+                    if(_pauseindexer)
+                    	return;
                     if (_CurrentRecordNumber == _LastRecordNumberProcessed)
                         return;
                     _LastRecordNumberProcessed++;
@@ -1174,6 +1179,9 @@ namespace RaptorDB
                     batch--;
                 }
             }
+            finally{
+            	Monitor.Exit(_slock);
+            }
         }
 
         private object _flock = new object();
@@ -1196,7 +1204,9 @@ namespace RaptorDB
                     if (_shuttingdown)
                         return;
                     //_log.Debug("batch full text indexing...");
-                    while (_pauseindexer) Thread.Sleep(0);
+                    int i = 0;
+                    while (_pauseindexer && i++ < 20) Thread.Sleep(0);
+                    if(_pauseindexer) return;
                     if (_CurrentRecordNumber == _LastFulltextIndexed)
                         return;
                     _LastFulltextIndexed++;

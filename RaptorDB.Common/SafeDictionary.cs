@@ -12,7 +12,7 @@ namespace RaptorDB.Common
 
         public SafeDictionary(int capacity)
         {
-            _Dictionary = new Dictionary<TKey, TValue>(capacity);
+        	_Dictionary = new Dictionary<TKey, TValue>(capacity);
         }
 
         public SafeDictionary()

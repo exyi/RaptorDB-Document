@@ -6,6 +6,7 @@ using System.IO;
 using System.Text;
 using System.Collections.Generic;
 using RaptorDB.Common;
+using System.Collections.Concurrent;
 
 namespace RaptorDB
 {
@@ -51,6 +52,11 @@ namespace RaptorDB
 
     internal class StorageFile<T>
     {
+        LimitedCache<StorageItem<T>> _metaCache = new LimitedCache<StorageItem<T>>(long.MaxValue, 512, _ => 1);
+        ConcurrentDictionary<int, WeakReference> _metaCacheDict = new ConcurrentDictionary<int, WeakReference>();
+        LimitedCache<byte[]> _dataCache = new LimitedCache<byte[]>(long.MaxValue, 512, _ => 1);
+        ConcurrentDictionary<int, WeakReference> _dataCacheDict = new ConcurrentDictionary<int, WeakReference>();
+
         FileStream _datawrite;
         FileStream _recfilewrite;
         FileStream _recfileread = null;
@@ -371,6 +377,12 @@ namespace RaptorDB
 
         private long internalWriteData(StorageItem<T> meta, byte[] data, bool raw)
         {
+        	byte[] metabytes = null;
+        	if(!raw){
+        		if (data != null)
+                    meta.dataLength = data.Length;
+                metabytes = fastBinaryJSON.BJSON.ToBJSON(meta, new fastBinaryJSON.BJSONParameters { UseExtensions = false });
+        	}
             lock (_readlock)
             {
                 _dirty = true;
@@ -385,10 +397,6 @@ namespace RaptorDB
 
                 if (raw == false)
                 {
-                    if (data != null)
-                        meta.dataLength = data.Length;
-                    byte[] metabytes = fastBinaryJSON.BJSON.ToBJSON(meta, new fastBinaryJSON.BJSONParameters { UseExtensions = false });
-
                     // write header info
                     _datawrite.Write(new byte[] { 1 }, 0, 1); // TODO : add json here, write bson for now
                     _datawrite.Write(Helper.GetBytes(metabytes.Length, false), 0, 4);
