@@ -10,8 +10,13 @@ namespace RaptorDB
     #region [  TypeIndexes  ]
     internal class TypeIndexes<T> : MGIndex<T>, IIndex where T : IComparable<T>
     {
-        public TypeIndexes(string path, string filename, byte keysize)
+    	public TypeIndexes(string path, string filename, byte keysize)
             : base(path, filename + ".mgidx", keysize, Global.PageItemCount, true)
+        {
+
+        }
+    	public TypeIndexes(string path, string filename, byte keysize, bool allowDups)
+            : base(path, filename + ".mgidx", keysize, Global.PageItemCount, allowDups)
         {
 
         }

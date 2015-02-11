@@ -693,7 +693,7 @@ namespace RaptorDB.Views
         private void CreateLoadIndexes(ViewRowDefinition viewRowDefinition)
         {
             int i = 0;
-            _indexes.Add(_docid, new TypeIndexes<Guid>(_Path, _docid, 16));
+            _indexes.Add(_docid, new TypeIndexes<Guid>(_Path, _docid, 16, allowDups: false));
             // load indexes
             foreach (var c in viewRowDefinition.Columns)
             {

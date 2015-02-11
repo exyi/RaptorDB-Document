@@ -89,9 +89,7 @@ namespace RaptorDB
 
                     if (val == true)
                     {
-                        bool b = false;
-                        if (_offsets.TryGetValue((uint)index, out b) == false)
-                            _offsets.Add((uint)index, true);
+                    	_offsets[(uint)index] = true;
                         // set max
                         if (index > _curMax)
                             _curMax = (uint)index;
@@ -413,10 +411,10 @@ namespace RaptorDB
             {
                 // change type to WAH
                 _state = TYPE.Bitarray;
-                _uncompressed = new uint[0];
+                _uncompressed = new uint[_curMax];
                 // create bitmap
                 foreach (var i in _offsets.Keys)
-                    Set((int)i, true);
+                    internalSet((int)i, true);
                 // clear list
                 _offsets = new Dictionary<uint, bool>();
             }
