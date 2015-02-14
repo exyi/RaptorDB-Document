@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -97,6 +98,7 @@ namespace RaptorDB
         private bool _AllowDuplicates = true;
         private int _LastIndexedRecordNumber = 0;
         private int _maxPageItems = 0;
+        Func<T, T, int> _compFunc = null;
 
         /// <summary>
         /// lock read when reading anything and lock write if writing to pagelist and creating new pages
@@ -118,6 +120,10 @@ namespace RaptorDB
                 page.isDirty = true;
                 _pageList.Add(page.FirstKey, new PageInfo(page.DiskPageNumber, 0, 0));
                 _cache.TryAdd(page.DiskPageNumber, page);
+            }
+            if (typeof(T) == typeof(string))
+            {
+                _compFunc = (Func<T, T, int>)(Delegate)(Func<string, string, int>)CultureInfo.CurrentCulture.CompareInfo.Compare;
             }
         }
 
@@ -218,7 +224,8 @@ namespace RaptorDB
                     page.isDirty = true;
                 }
             }
-            if (page.tree.Count > Global.PageItemCount)
+            var c = page.tree.Count;
+            if (c > Global.PageItemCount || (c > Global.EarlyPageSplitSize && _pageList.Count <= Global.EarlyPageCount))
                 SplitPage(page.DiskPageNumber);
         }
 
@@ -285,7 +292,10 @@ namespace RaptorDB
                 _log.Debug("releasing page count = " + free.Count + " out of " + _cache.Count);
                 Page<T> p;
                 foreach (var i in free)
+                {
                     _cache.TryRemove(i, out p);
+                    p.rwlock.Dispose();
+                }
             }
             catch { }
         }
@@ -450,52 +460,52 @@ namespace RaptorDB
         private void SplitPage(int num)
         {
             Page<T> page = null;
-            try
+            if (_pageList.Count == 1 && _listLock.WaitingWriteCount > 0)
+                // some other thread is waiting to change the first page
+                return;
+            using (_listLock.Writing())
             {
-                _listLock.EnterWriteLock();
-
                 page = LoadPage(num);
-                if (page.tree.Count < Global.PageItemCount) return;
+                if (page.tree.Count < Global.PageItemCount && (page.tree.Count < Global.EarlyPageSplitSize || _pageList.Count > Global.EarlyPageCount)) return;
 
-                page.rwlock.EnterWriteLock();
-                if (page.tree.Count < Global.PageItemCount) return;
-
-                // split the page
-                DateTime dt = FastDateTime.Now;
-
-                Page<T> newpage = new Page<T>();
-                newpage.DiskPageNumber = _index.GetNewPageNumber();
-                newpage.RightPageNumber = page.RightPageNumber;
-                newpage.isDirty = true;
-                page.RightPageNumber = newpage.DiskPageNumber;
-                // get and sort keys
-                T[] keys = page.tree.Keys();
-                Array.Sort<T>(keys);
-                // copy data to new 
-                for (int i = keys.Length / 2; i < keys.Length; i++)
+                using (page.rwlock.Writing())
                 {
-                    newpage.tree.Add(keys[i], page.tree[keys[i]]);
-                    // remove from old page
-                    page.tree.Remove(keys[i]);
-                }
-                // set the first key
-                newpage.FirstKey = keys[keys.Length / 2];
-                // set the first key refs
-                _pageList.Remove(page.FirstKey);
-                _pageList.Remove(keys[0]);
-                // dup counts
-                _pageList.Add(keys[0], new PageInfo(page.DiskPageNumber, page.tree.Count, 0));
-                page.FirstKey = keys[0];
-                // FEATURE : dup counts
-                _pageList.Add(newpage.FirstKey, new PageInfo(newpage.DiskPageNumber, newpage.tree.Count, 0));
-                _cache.TryAdd(newpage.DiskPageNumber, newpage);
+                    if (page.tree.Count < Global.PageItemCount && (page.tree.Count < Global.EarlyPageSplitSize || _pageList.Count > Global.EarlyPageCount)) return;
+                    
+                    // split the page
+                    DateTime dt = FastDateTime.Now;
 
-                _totalsplits += FastDateTime.Now.Subtract(dt).TotalSeconds;
-            }
-            finally
-            {
-                if (page.rwlock.IsWriteLockHeld) page.rwlock.ExitWriteLock();
-                _listLock.ExitWriteLock();
+                    Page<T> newpage = new Page<T>();
+                    newpage.DiskPageNumber = _index.GetNewPageNumber();
+                    newpage.RightPageNumber = page.RightPageNumber;
+                    newpage.isDirty = true;
+                    page.RightPageNumber = newpage.DiskPageNumber;
+                    // get and sort keys
+                    T[] keys = page.tree.Keys();
+                    Array.Sort<T>(keys);
+                    // copy data to new 
+                    for (int i = keys.Length / 2; i < keys.Length; i++)
+                    {
+                        newpage.tree.Add(keys[i], page.tree[keys[i]]);
+                        // remove from old page
+                        page.tree.Remove(keys[i]);
+                    }
+                    // set the first key
+                    newpage.FirstKey = keys[keys.Length / 2];
+                    // set the first key refs
+                    _pageList.Remove(page.FirstKey);
+                    _pageList.Remove(keys[0]);
+                    // dup counts
+                    _pageList.Add(keys[0], new PageInfo(page.DiskPageNumber, page.tree.Count, 0));
+                    page.FirstKey = keys[0];
+
+                    // FEATURE : dup counts
+                    _pageList.Add(newpage.FirstKey, new PageInfo(newpage.DiskPageNumber, newpage.tree.Count, 0));
+                    _cache.TryAdd(newpage.DiskPageNumber, newpage);
+
+                    _totalsplits += FastDateTime.Now.Subtract(dt).TotalMilliseconds;
+                }
+
             }
         }
 
@@ -556,7 +566,7 @@ namespace RaptorDB
             {
                 mid = (first + last) >> 1;
                 T k = _pageList.Keys[mid];
-                int compare = k.CompareTo(key);
+                int compare = _compFunc == null ? k.CompareTo(key) : _compFunc(k, key);
                 if (compare < 0)
                 {
                     lastlower = mid;

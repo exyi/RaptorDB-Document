@@ -27,6 +27,16 @@ namespace RaptorDB
         /// </summary>
         public static ushort PageItemCount = 10000;
         /// <summary>
+        /// Number of items in first index page to split. 
+        /// Low values can speed up parallel set preformance early.
+        /// (default = 5000)
+        /// </summary>
+        public static ushort EarlyPageSplitSize = 5000;
+        /// <summary>
+        /// Number of pages considered as early
+        /// </summary>
+        public static int EarlyPageCount = 1; 
+        /// <summary>
         /// KeyStore save to disk timer
         /// </summary>
         public static int SaveIndexToDiskTimerSeconds = 60;

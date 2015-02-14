@@ -62,11 +62,8 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="ProfilingSessions\Session20150207_144034.sdps" />
-    <Content Include="ProfilingSessions\Session20150207_145624.sdps" />
-    <Content Include="ProfilingSessions\Session20150207_150224.sdps" />
-    <Content Include="ProfilingSessions\Session20150211_141236.sdps" />
-    <Content Include="ProfilingSessions\Session20150211_144943.sdps" />
+    <Content Include="ProfilingSessions\Session20150213_195352.sdps" />
+    <Content Include="ProfilingSessions\Session20150213_203909.sdps" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
