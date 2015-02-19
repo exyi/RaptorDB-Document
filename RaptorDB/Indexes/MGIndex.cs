@@ -555,22 +555,21 @@ namespace RaptorDB
 
         private int FindPageOrLowerPosition(T key, ref bool found)
         {
-            if (_pageList.Count == 0)
+            if (_pageList.Count <= 1)
                 return 0;
             // binary search
-            int lastlower = 0;
             int first = 0;
             int last = _pageList.Count - 1;
             int mid = 0;
-            while (first <= last)
+            while (first < last)
             {
-                mid = (first + last) >> 1;
+            	// int divide and ceil
+            	mid = ((first + last - 1) >> 1) + 1;
                 T k = _pageList.Keys[mid];
                 int compare = _compFunc == null ? k.CompareTo(key) : _compFunc(k, key);
                 if (compare < 0)
                 {
-                    lastlower = mid;
-                    first = mid + 1;
+                    first = mid;
                 }
                 if (compare == 0)
                 {
@@ -583,7 +582,7 @@ namespace RaptorDB
                 }
             }
 
-            return lastlower;
+            return first;
         }
         #endregion
 

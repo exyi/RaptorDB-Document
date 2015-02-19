@@ -335,8 +335,12 @@ namespace RaptorDB
         #region [  P R I V A T E  ]
         private uint[] GetOffsets()
         {
-            uint[] k = new uint[_offsets.Count];
-            _offsets.Keys.CopyTo(k, 0);
+            uint[] k;
+            lock (_lock)
+            {
+                k = new uint[_offsets.Count];
+                _offsets.Keys.CopyTo(k, 0);
+            }
             Array.Sort(k);
             return k;
         }

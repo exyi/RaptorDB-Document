@@ -83,12 +83,20 @@ namespace RaptorDB
 
                 foreach (int k in keys)
                 {
-                    var bmp = _cache[k];
-                    if (bmp.isDirty)
+                    WAHBitArray bmp;
+
+                    if (_cache.TryGetValue(k, out bmp))
                     {
-                        SaveBitmap(k, bmp);
-                        bmp.FreeMemory();
-                        bmp.isDirty = false;
+                        if (bmp.isDirty)
+                        {
+                            SaveBitmap(k, bmp);
+                            bmp.FreeMemory();
+                            bmp.isDirty = false;
+                        }
+                    }
+                    else
+                    {
+
                     }
                 }
                 Flush();

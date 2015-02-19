@@ -150,13 +150,6 @@
     </EmbeddedResource>
     <EmbeddedResource Include="Replication\msg.txt" />
   </ItemGroup>
-  <ItemGroup>
-    <Content Include="ProfilingSessions\Session20150207_124541.sdps" />
-    <Content Include="ProfilingSessions\Session20150211_153335.sdps" />
-    <Content Include="ProfilingSessions\Session20150211_163149.sdps" />
-    <Content Include="ProfilingSessions\Session20150213_193641.sdps" />
-    <Content Include="ProfilingSessions\Session20150213_193854.sdps" />
-  </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
     <PostBuildEvent>md "$(SolutionDir)nuget\net40"

@@ -46,6 +46,7 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="RRRandom.cs" />
     <Compile Include="views.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -62,8 +63,7 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="ProfilingSessions\Session20150213_195352.sdps" />
-    <Content Include="ProfilingSessions\Session20150213_203909.sdps" />
+    <Content Include="ProfilingSessions\Session20150219_153312.sdps" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
