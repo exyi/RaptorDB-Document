@@ -102,5 +102,19 @@ namespace RaptorDB
         /// <para> - If you unset (0) the value previous split files will remain and all the data will go to the last file.</para>
         /// </summary>
         public static ushort SplitStorageFilesMegaBytes = 0;
+        /// <summary>
+        /// Compress the documents in the storage file if it is over this size (default = 100 Kilobytes) 
+        /// <para> - You will be trading CPU for disk IO</para>
+        /// </summary>
+        public static ushort CompressDocumentOverKiloBytes = 100;
+        /// <summary>
+        /// Disk block size for high frequency KV storage file (default = 2048)
+        /// <para> * Do not use anything under 512 with large string keys</para>
+        /// </summary>
+        public static ushort HighFrequencyKVDiskBlockSize = 2048;
+        /// <summary>
+        /// String key MGIndex that stores keys in an external file for smaller index files
+        /// </summary>
+        public static bool EnableOptimizedStringIndex = true;
     }
 }

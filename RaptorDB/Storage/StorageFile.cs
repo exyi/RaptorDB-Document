@@ -24,6 +24,7 @@ namespace RaptorDB
         public bool isDeleted;
         public bool isReplicated;
         public int dataLength;
+        public byte isCompressed; // 0 = no, 1 = MiniLZO
     }
 
     public interface IDocStorage<T>
@@ -88,6 +89,7 @@ namespace RaptorDB
                                               0  // 5 -- not used
                                            };
         private static string _splitfileExtension = "00000";
+        private const int _KILOBYTE = 1024;
         // record format :
         //    1 type (0 = raw no meta data, 1 = bson meta, 2 = json meta)  
         //    4 byte meta/data length, 
@@ -255,7 +257,11 @@ namespace RaptorDB
                 data = fastBinaryJSON.BJSON.ToBJSON(obj);
             else
                 data = Helper.GetBytes(fastJSON.JSON.ToJSON(obj));
-
+            if(data.Length > (int)Global.CompressDocumentOverKiloBytes*_KILOBYTE)
+            {
+                meta.isCompressed = 1;
+                data = MiniLZO.Compress(data); //MiniLZO
+            }
             return internalWriteData(meta, data, false);
         }
 
@@ -270,7 +276,11 @@ namespace RaptorDB
                 data = fastBinaryJSON.BJSON.ToBJSON(obj);
             else
                 data = Helper.GetBytes(fastJSON.JSON.ToJSON(obj));
-
+            if (data.Length > (int)Global.CompressDocumentOverKiloBytes * _KILOBYTE)
+            {
+                meta.isCompressed = 1;
+                data = MiniLZO.Compress(data);
+            }
             return internalWriteData(meta, data, false);
         }
 
@@ -278,6 +288,12 @@ namespace RaptorDB
         {
             StorageItem<T> meta = new StorageItem<T>();
             meta.key = key;
+
+            if (data.Length > (int)Global.CompressDocumentOverKiloBytes * _KILOBYTE)
+            {
+                meta.isCompressed = 1;
+                data = MiniLZO.Compress(data);
+            }
 
             return internalWriteData(meta, data, false);
         }
@@ -297,6 +313,7 @@ namespace RaptorDB
         public object ReadObject(long recnum, out StorageItem<T> meta)
         {
             byte[] b = ReadBytes(recnum, out meta);
+
             if (b == null)
                 return null;
             if (b[0] < 32)
@@ -391,7 +408,7 @@ namespace RaptorDB
                 if (_viewmode == false && Global.SplitStorageFilesMegaBytes > 0)
                 {
                     // current file size > _splitMegaBytes --> new file
-                    if (_datawrite.Length > (long)Global.SplitStorageFilesMegaBytes * 1024 * 1024)
+                    if (offset > (long)Global.SplitStorageFilesMegaBytes * 1024 * 1024)
                         CreateNewStorageFile();
                 }
 
@@ -471,6 +488,10 @@ namespace RaptorDB
                 long off = ComputeOffset(recnum);
                 FileStream fs = GetReadFileStreamWithSeek(off);
                 byte[] data = internalReadBytes(fs, out meta);
+
+                if (meta.isCompressed > 0)
+                    data = MiniLZO.Decompress(data);
+
                 return data;
             }
         }

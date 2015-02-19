@@ -51,23 +51,4 @@ namespace Views
             }, "").Cast<sumtype>().ToList();
         }
     }
-
-
-    //public class EmbeddedHandler : IClientHandler
-    //{
-    //    public bool GenerateClientData(IQueryInterface api, string username, List<Guid> DocsToSend)
-    //    {
-    //        api.Log("generating data for user : " + username);
-
-    //        // query data to send to client here as needed
-    //        var r = api.Query<SalesInvoiceViewRowSchema>(x => x.Serial < 10);
-    //        foreach (var p in r.Rows)
-    //        {
-    //            DocsToSend.Add(p.docid);
-    //        }
-
-
-    //        return true;
-    //    }
-    //}
 }

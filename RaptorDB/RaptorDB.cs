@@ -67,6 +67,7 @@ namespace RaptorDB
         private Views.ViewManager _viewManager;
         private KeyStore<Guid> _objStore;
         private KeyStore<Guid> _fileStore;
+        private KeyStoreHF _objHF;
         private string _Path = "";
         private int _LastRecordNumberProcessed = -1; // used by background saver
         private int _LastFulltextIndexed = -1; // used by the fulltext indexer
@@ -266,6 +267,11 @@ namespace RaptorDB
 
             _shuttingdown = true;
 
+            _processinboxTimer.Enabled = false;
+            _saveTimer.Enabled = false;
+            _freeMemTimer.Enabled = false;
+            _fulltextTimer.Enabled = false;
+
             if (_repserver != null)
                 _repserver.Shutdown();
 
@@ -291,6 +297,7 @@ namespace RaptorDB
             _viewManager.ShutDown();
             _objStore.Shutdown();
             _fileStore.Shutdown();
+            _objHF.Shutdown();
             LogManager.Shutdown();
         }
 
@@ -982,6 +989,8 @@ namespace RaptorDB
                 // if branch.config exists -> start replication client
                 _repclient = new Replication.ReplicationClient(_Path, File.ReadAllText(_Path + "RaptorDB-Branch.config"), _objStore);
             }
+
+            _objHF = new KeyStoreHF(_Path + "DataHF");
         }
 
         object _inboxlock = new object();
@@ -1107,6 +1116,7 @@ namespace RaptorDB
                 _fulltextindex.FreeMemory();
                 _objStore.FreeMemory();
                 _fileStore.FreeMemory();
+                _objHF.FreeMemory();
                 GC.Collect(2);
             }
         }
@@ -1440,6 +1450,11 @@ namespace RaptorDB
         public long DocumentCount()
         {
             return _objStore.Count();
+        }
+
+        public IKeyStoreHF GetKVHF()
+        {
+            return _objHF;
         }
     }
 }

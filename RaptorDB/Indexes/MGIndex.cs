@@ -70,6 +70,7 @@ namespace RaptorDB
         public T FirstKey;
         public bool isDirty;
         public SafeDictionary<T, KeyInfo> tree;
+        public List<int> allocblocks;
         public ReaderWriterLockSlim rwlock;
     }
 
@@ -212,7 +213,7 @@ namespace RaptorDB
                     }
                     else
                     {
-                        // new item
+                        // new item 
                         ki = new KeyInfo(val);
                         if (_AllowDuplicates)
                             SaveDuplicate(key, ref ki);
@@ -271,6 +272,7 @@ namespace RaptorDB
         {
             using (_listLock.Writing())
             {
+                SaveIndex();
                 // save page list
                 _index.SavePageList(_pageList, _pageListDiskPages);
                 // shutdown
@@ -331,6 +333,7 @@ namespace RaptorDB
                 bool b = page.tree.Remove(key);
                 using (page.rwlock.Writing())
                 {
+                    // FIX : reset the first key for page
                     if (b)
                     {
                         Interlocked.Decrement(ref pi.UniqueCount);
@@ -471,7 +474,7 @@ namespace RaptorDB
                 using (page.rwlock.Writing())
                 {
                     if (page.tree.Count < Global.PageItemCount && (page.tree.Count < Global.EarlyPageSplitSize || _pageList.Count > Global.EarlyPageCount)) return;
-                    
+
                     // split the page
                     DateTime dt = FastDateTime.Now;
 
@@ -563,8 +566,8 @@ namespace RaptorDB
             int mid = 0;
             while (first < last)
             {
-            	// int divide and ceil
-            	mid = ((first + last - 1) >> 1) + 1;
+                // int divide and ceil
+                mid = ((first + last - 1) >> 1) + 1;
                 T k = _pageList.Keys[mid];
                 int compare = _compFunc == null ? k.CompareTo(key) : _compFunc(k, key);
                 if (compare < 0)
@@ -599,6 +602,18 @@ namespace RaptorDB
                 }
                 return keys.ToArray();
             }
+        }
+
+        internal int Count()
+        {
+            int count = 0;
+            for (int i = 0; i < _pageList.Count; i++)
+            {
+                Page<T> page = LoadPage(_pageList.Values[i].PageNumber);
+                foreach (var k in page.tree.Keys())
+                    count++;
+            }
+            return count;
         }
     }
 }

@@ -11,6 +11,7 @@ using RaptorDB.Common;
 using SampleViews;
 using System.Linq.Expressions;
 using Views;
+using System.IO;
 
 namespace datagridbinding
 {
@@ -111,6 +112,18 @@ namespace datagridbinding
                 Random r = new Random();
                 for (int i = 0; i < count; i++)
                 {
+                    var inv = CreateInvoice(i);
+                    if (i % step == 0)
+                        toolStripProgressBar1.Value++;
+                    rap.Save(inv.ID, inv);
+                }
+                MessageBox.Show("Insert done in (sec) : " + FastDateTime.Now.Subtract(dt).TotalSeconds);
+                toolStripProgressBar1.Value = 0;
+            }
+        }
+
+        private static SalesInvoice CreateInvoice(int i)
+        {
                     var inv = new SalesInvoice()
                     {
                         Date = Faker.DateTimeFaker.BirthDay(),// FastDateTime.Now.AddMinutes(r.Next(60)),
@@ -124,14 +137,8 @@ namespace datagridbinding
                     inv.Items = new List<LineItem>();
                     for (int k = 0; k < 5; k++)
                         inv.Items.Add(new LineItem() { Product = "prod " + k, Discount = 0, Price = 10 + k, QTY = 1 + k });
-                    if (i % step == 0)
-                        toolStripProgressBar1.Value++;
-                    rap.Save(inv.ID, inv);
+            return inv;
                 }
-                MessageBox.Show("Insert done in (sec) : " + FastDateTime.Now.Subtract(dt).TotalSeconds);
-                toolStripProgressBar1.Value = 0;
-            }
-        }
 
         private void backupToolStripMenuItem_Click(object sender, EventArgs e)
         {
@@ -172,32 +179,51 @@ namespace datagridbinding
             toolStripStatusLabel1.Text = "Count = " + qq.Count.ToString("#,0");
         }
 
+        private void KVHFtest()
+        {
+            //var r = (rap as RaptorDB.RaptorDB);
+            var kv = rap.GetKVHF();
+            
+            DateTime dt = DateTime.Now;
+            for (int i = 0; i < 100000; i++)
+            {
+                var o = CreateInvoice(i);
+                kv.SetObjectHF(i.ToString(), o);// new byte[100000]);
+            }
+            MessageBox.Show("time = " + DateTime.Now.Subtract(dt).TotalSeconds);
+
+            var g = kv.GetObjectHF("1009");
+
+            for (int i = 0; i < 100000; i++)
+                kv.DeleteKeyHF(i.ToString());
+            
+            g = kv.GetObjectHF("1009");
+            MessageBox.Show(""+kv.CountHF());
+
+            foreach (var f in Directory.GetFiles("d:\\pp", "*.*"))
+        {
+                kv.SetObjectHF(f, File.ReadAllBytes(f));
+            }
+            
+            kv.CompactStorageHF();
+
+            foreach (var f in Directory.GetFiles("d:\\pp", "*.*"))
+            {
+                var o = kv.GetObjectHF(f);
+                File.WriteAllBytes(f.Replace("\\pp\\", "\\ppp\\"), o as byte[]);
+            }
+            bool b = kv.ContainsHF("aa");
+            var keys = kv.GetKeysHF();
+            //foreach(var o in r.KVHF.EnumerateObjects())
+            //{
+            //    string s = o.GetType().ToString();
+            //}
+        }
+
         private void testToolStripMenuItem_Click(object sender, EventArgs e)
         {
             GC.Collect(2);
-            //var t = rap.FullTextSearch("bc73f619-6035-49a3-99c7-3be4ca4170cb");
-            //object o = rap.FetchVersion(t[0]);
-
-            //Guid g = Guid.NewGuid();
-            //var inv = new SalesInvoice()
-            //{
-            //    ID = g,
-            //    Date = FastDateTime.Now,
-            //    Serial = 30000,
-            //    CustomerName = "revision test",
-            //    NoCase = "revision test",
-            //    Status = 0,
-            //    Address = "here there",
-            //    Approved = false
-            //};
-            //rap.Save(g, inv);
-            //inv.CustomerName += "1";
-            //rap.Save(g, inv);
-            //inv.CustomerName += "2";
-            //rap.Save(g, inv);
-
-            //int[] revs = rap.FetchHistory(g);
-            //object oo = rap.FetchVersion(revs[0]);
+            //KVHFtest();
 
             int c = rap.Count<SalesInvoiceViewRowSchema>(x => x.Serial < 100);
             c = rap.Count<SalesInvoiceViewRowSchema>(x => x.Serial != 100);
@@ -212,7 +238,7 @@ namespace datagridbinding
             //Guid g = new Guid("82997e60-f8f4-4b37-ae35-02d033512673");
             var qq = rap.Query<SalesInvoiceViewRowSchema>(x => x.docid == new Guid("82997e60-f8f4-4b37-ae35-02d033512673"));
             dataGridView1.DataSource = q.Rows;
-            
+
             //int i = rap.ViewDelete<SalesInvoiceViewRowSchema>(x => x.Serial == 0);
 
             //var qqq= rap.Query<SalesInvoiceViewRowSchema>(x => );
