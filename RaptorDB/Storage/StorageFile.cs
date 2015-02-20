@@ -53,11 +53,6 @@ namespace RaptorDB
 
     internal class StorageFile<T>
     {
-        LimitedCache<StorageItem<T>> _metaCache = new LimitedCache<StorageItem<T>>(long.MaxValue, 512, _ => 1);
-        ConcurrentDictionary<int, WeakReference> _metaCacheDict = new ConcurrentDictionary<int, WeakReference>();
-        LimitedCache<byte[]> _dataCache = new LimitedCache<byte[]>(long.MaxValue, 512, _ => 1);
-        ConcurrentDictionary<int, WeakReference> _dataCacheDict = new ConcurrentDictionary<int, WeakReference>();
-
         FileStream _datawrite;
         FileStream _recfilewrite;
         FileStream _recfileread = null;
