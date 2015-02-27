@@ -87,13 +87,13 @@ namespace RaptorDB
 
                     if (_cache.TryGetValue(k, out bmp))
                     {
-                        if (bmp.isDirty)
-                        {
-                            SaveBitmap(k, bmp);
-                            bmp.FreeMemory();
-                            bmp.isDirty = false;
-                        }
+                    if (bmp.isDirty)
+                    {
+                        SaveBitmap(k, bmp);
+                        bmp.FreeMemory();
+                        bmp.isDirty = false;
                     }
+                }
                     else
                     {
 

@@ -339,7 +339,7 @@ namespace RaptorDB
             lock (_lock)
             {
                 k = new uint[_offsets.Count];
-                _offsets.Keys.CopyTo(k, 0);
+            _offsets.Keys.CopyTo(k, 0);
             }
             Array.Sort(k);
             return k;
@@ -430,6 +430,11 @@ namespace RaptorDB
                 return;
             int c = index >> 5;
             c++;
+            if(_uncompressed == null)
+            {
+                _uncompressed = new uint[c];
+                return;
+            }
             if (c > _uncompressed.Length)
             {
                 uint[] ar = new uint[c];
