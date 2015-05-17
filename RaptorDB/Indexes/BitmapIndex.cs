@@ -97,7 +97,7 @@ namespace RaptorDB
                     else
                     {
 
-                    }
+                }
                 }
                 Flush();
                 if (freeMemory)
@@ -113,7 +113,7 @@ namespace RaptorDB
             {
                 WAHBitArray ba = null;
 
-                ba = GetBitmap(bitmaprecno);
+                ba = internalGetBitmap(bitmaprecno); //GetBitmap(bitmaprecno);
 
                 ba.Set(record, true);
             }
@@ -399,13 +399,13 @@ namespace RaptorDB
         private void CheckInternalOP()
         {
             if (_optimizing)
-            	lock (_oplock) { } // yes! this is good
+              lock (_oplock) { } // yes! this is good
             Interlocked.Increment(ref _workingCount);
         }
 
         private void Done()
         {
-        	Interlocked.Decrement(ref _workingCount);
+            Interlocked.Decrement(ref _workingCount);
         }
         #endregion
 

@@ -31,7 +31,7 @@ namespace RaptorDB.Common
         void CompactStorageHF();
 
         //IEnumerable<object> EnumerateObjects();
-        // SearchKeys()
+        //string[] SearchKeys(string contains); // FIX : implement 
     }
 
     public interface IRaptorDB
@@ -344,5 +344,7 @@ namespace RaptorDB.Common
         /// <para>NOTE : You do not have history of changes in this storage.</para>
         /// </summary>
         IKeyStoreHF GetKVHF();
+
+        void Shutdown();
     }
 }

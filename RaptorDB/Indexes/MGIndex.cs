@@ -98,7 +98,7 @@ namespace RaptorDB
             if (typeof(T) == typeof(string))
             {
                 _compFunc = (Func<T, T, int>)(Delegate)(Func<string, string, int>)CultureInfo.CurrentCulture.CompareInfo.Compare;
-        }
+            }
         }
 
         public int GetLastIndexedRecordNumber()
@@ -306,7 +306,7 @@ namespace RaptorDB
             bool b = page.tree.Remove(key);
                 using (page.rwlock.Writing())
                 {
-            // FIX : reset the first key for page
+            // FIX : reset the first key for page ??
             if (b)
             {
                         Interlocked.Decrement(ref pi.UniqueCount);
@@ -480,7 +480,7 @@ namespace RaptorDB
                     _cache.TryAdd(newpage.DiskPageNumber, newpage);
 
                     _totalsplits += FastDateTime.Now.Subtract(dt).TotalMilliseconds;
-                }
+        }
 
             }
         }

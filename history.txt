@@ -1,3 +1,37 @@
+v3.2.12
+-------
+- code cleanup
+- bug fix full text searching with + - prefixes
+- upgrade to fastJSON v2.1.13
+- upgrade to fastBinaryJSON v1.4.10
+
+v3.2.11
+-------
+- bug fix sorting cache
+
+v3.2.10
+-------
+- renamed Form1 to frmMain
+- added sortable fulltext indexes
+- fixed path names for linux systems
+- changed default save and free memory timers to 30 min instead of 60 sec
+- optimized query sorting with internal cache ~100x faster
+
+v3.2.9
+------
+- upgrade to fastJSON v2.1.11
+- upgrade to fastBinaryJSON v1.4.8
+- added support for vb.net string linq queries 
+- added vb test project
+
+v3.2.8
+------
+- bug fix duplicates showing in queries related to the deleted bitmap index 
+
+v3.2.7
+------
+- bug fix wait on view rebuild while Shutdown() was being cut off in 2 secs mid process (ProcessExit)
+
 v3.2.6
 ------
 - optimizations done by Stainslav Lukeš

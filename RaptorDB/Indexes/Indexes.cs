@@ -88,11 +88,11 @@ namespace RaptorDB
     #region [  BoolIndex  ]
     internal class BoolIndex : IIndex
     {
-        public BoolIndex(string path, string filename)
+        public BoolIndex(string path, string filename, string extension)
         {
             // create file
-            _filename = filename;
-            if (_filename.Contains(".") == false) _filename += ".deleted";
+            _filename = filename + extension;
+            //if (_filename.Contains(".") == false) _filename += ".deleted";
             _path = path;
             if (_path.EndsWith(Path.DirectorySeparatorChar.ToString()) == false)
                 _path += Path.DirectorySeparatorChar.ToString();
@@ -105,7 +105,7 @@ namespace RaptorDB
         private string _filename;
         private string _path;
         private object _lock = new object();
-        private bool _inMemory = false;
+        //private bool _inMemory = false;
 
         public WAHBitArray GetBits()
         {
@@ -114,43 +114,51 @@ namespace RaptorDB
 
         public void Set(object key, int recnum)
         {
-            if (key != null)
-                _bits.Set(recnum, (bool)key);
+            lock (_lock)
+                if (key != null)
+                    _bits.Set(recnum, (bool)key);
         }
 
         public WAHBitArray Query(RDBExpression ex, object from, int maxsize)
         {
-            bool b = (bool)from;
-            if (b)
-                return _bits;
-            else
-                return _bits.Not(maxsize);
+            lock (_lock)
+            {
+                bool b = (bool)from;
+                if (b)
+                    return _bits;
+                else
+                    return _bits.Not(maxsize);
+            }
         }
 
         public void FreeMemory()
         {
-            // free memory
-            _bits.FreeMemory();
-            // save to disk
-            SaveIndex();
+            lock (_lock)
+            {
+                // free memory
+                //_bits.FreeMemory();
+                // save to disk
+                //SaveIndex();
+            }
         }
 
         public void Shutdown()
         {
             // shutdown
-            if (_inMemory == false)
-                WriteFile();
+            //if (_inMemory == false)
+            WriteFile();
         }
 
         public void SaveIndex()
         {
-            if (_inMemory == false)
-                WriteFile();
+            //if (_inMemory == false)
+            WriteFile();
         }
 
         public void InPlaceOR(WAHBitArray left)
         {
-            _bits = _bits.Or(left);
+            lock (_lock)
+                _bits = _bits.Or(left);
         }
 
         private void WriteFile()
@@ -208,15 +216,23 @@ namespace RaptorDB
     #region [  FullTextIndex  ]
     internal class FullTextIndex : Hoot, IIndex
     {
-        public FullTextIndex(string IndexPath, string FileName, bool docmode)
+        public FullTextIndex(string IndexPath, string FileName, bool docmode, bool sortable)
             : base(IndexPath, FileName, docmode)
         {
-
+            if (sortable)
+            {
+                _idx = new TypeIndexes<string>(IndexPath, FileName, Global.DefaultStringKeySize);
+                _sortable = true;
+            }
         }
+        private bool _sortable = false;
+        private IIndex _idx;
 
         public void Set(object key, int recnum)
         {
             base.Index(recnum, (string)key);
+            if (_sortable)
+                _idx.Set(key, recnum); 
         }
 
         public WAHBitArray Query(RDBExpression ex, object from, int maxsize)
@@ -227,8 +243,9 @@ namespace RaptorDB
         public void SaveIndex()
         {
             base.Save();
+            if (_sortable)
+                _idx.SaveIndex();
         }
-
 
         public WAHBitArray Query(object fromkey, object tokey, int maxsize)
         {
@@ -237,8 +254,26 @@ namespace RaptorDB
 
         public object[] GetKeys()
         {
-            return new object[] { }; // FEATURE: ? support get keys 
+            if (_sortable)
+                return _idx.GetKeys(); // support get keys 
+            else
+                return new object[] { }; 
         }
+        void IIndex.FreeMemory()
+        {
+            base.FreeMemory();
+
+            this.SaveIndex();
+        }
+
+        void IIndex.Shutdown()
+        {
+            this.SaveIndex();
+            base.Shutdown();
+            if (_sortable)
+                _idx.Shutdown();
+        }
+        
     }
     #endregion
 
