@@ -19,7 +19,7 @@ namespace RaptorDB
         public int blocknumber;
     }
 
-    internal class KeyStoreHF : IKeyStoreHF
+    public class KeyStoreHF : IKeyStoreHF
     {
         MGIndex<string> _keys;
         StorageFileHF _datastore;

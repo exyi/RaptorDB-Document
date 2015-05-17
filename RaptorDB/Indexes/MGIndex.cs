@@ -61,7 +61,7 @@ namespace RaptorDB
 
     #endregion
 
-    internal class MGIndex<T> where T : IComparable<T>
+    public class MGIndex<T> where T : IComparable<T>
     {
         ILog _log = LogManager.GetLogger(typeof(MGIndex<T>));
         private SortedList<T, PageInfo> _pageList = new SortedList<T, PageInfo>();

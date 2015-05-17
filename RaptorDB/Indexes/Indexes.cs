@@ -8,7 +8,7 @@ using RaptorDB.Common;
 namespace RaptorDB
 {
     #region [  TypeIndexes  ]
-    internal class TypeIndexes<T> : MGIndex<T>, IIndex where T : IComparable<T>
+    public class TypeIndexes<T> : MGIndex<T>, IIndex where T : IComparable<T>
     {
     	public TypeIndexes(string path, string filename, byte keysize)
             : base(path, filename + ".mgidx", keysize, Global.PageItemCount, true)
@@ -86,7 +86,7 @@ namespace RaptorDB
     #endregion
 
     #region [  BoolIndex  ]
-    internal class BoolIndex : IIndex
+    public class BoolIndex : IIndex
     {
         public BoolIndex(string path, string filename, string extension)
         {

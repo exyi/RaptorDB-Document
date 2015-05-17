@@ -8,7 +8,7 @@ using System.Collections;
 
 namespace RaptorDB
 {
-    internal class BitmapIndex
+    public class BitmapIndex
     {
         public BitmapIndex(string path, string filename)
         {
