@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Xml.Serialization;
+using RaptorDB.Views;
+using System.Reflection;
 
 namespace RaptorDB
 {
@@ -64,20 +66,83 @@ namespace RaptorDB
         /// When defining your own schema and you don't want dependancies to RaptorDB to propogate through your code
         /// define your full text columns here
         /// </summary>
+        [Obsolete("You should use IndexDefinitions and ViewIndexDefinitionHelper extension methods")]
         public List<string> FullTextColumns;
-        
+
         /// <summary>
         /// When defining your own schems and you don't want dependancies to RaptorDB to propogate through your code 
         /// define your case insensitive columns here
         /// </summary>
+        [Obsolete("You should use IndexDefinitions and ViewIndexDefinitionHelper extension methods")]
         public List<string> CaseInsensitiveColumns;
 
+
+        [Obsolete("You should use IndexDefinitions and ViewIndexDefinitionHelper extension methods")]
         public Dictionary<string, byte> StringIndexLength;
 
         /// <summary>
         /// Columns that you don't want to index
         /// </summary>
+        [Obsolete("You should use IndexDefinitions and ViewIndexDefinitionHelper extension methods")]
         public List<string> NoIndexingColumns;
+
+        public Dictionary<string, IViewColumnIndexDefinition> IndexDefinitions { get; set; }
+
+
+        public void AutoInitIndexDefinitions()
+        {
+            foreach (var p in Schema.GetProperties())
+            {
+                if (IndexDefinitions.ContainsKey(p.Name)) return;
+                Type t = p.PropertyType;
+                IndexDefinitions[p.Name] = AutoInitMember(p, t);
+            }
+
+            foreach (var f in Schema.GetFields())
+            {
+                if (IndexDefinitions.ContainsKey(f.Name)) return;
+                Type t = f.FieldType;
+                IndexDefinitions[f.Name] = AutoInitMember(f, t);
+            }
+        }
+
+#pragma warning disable CS0618 // Type or member is obsolete
+        public IViewColumnIndexDefinition AutoInitMember(MemberInfo p, Type t)
+        {
+            if (NoIndexingColumns.Contains(p.Name) || NoIndexingColumns.Contains(p.Name.ToLower()))
+            {
+                return new NoIndexColumnDefinition();
+            }
+            else
+            {
+                if (FullTextColumns.Contains(p.Name) || FullTextColumns.Contains(p.Name.ToLower()) || p.GetCustomAttributes(typeof(FullTextAttribute), true).Length > 0)
+                    return new FullTextIndexColumnDefinition();
+
+                var cs = p.GetCustomAttributes(typeof(CaseInsensitiveAttribute), true).Length > 0 ||
+                    CaseInsensitiveColumns.Contains(p.Name) || CaseInsensitiveColumns.Contains(p.Name.ToLower());
+
+                byte length = Global.DefaultStringKeySize;
+                var a = p.GetCustomAttributes(typeof(StringIndexLengthAttribute), false);
+                if (a.Length > 0)
+                {
+                    length = (a[0] as StringIndexLengthAttribute).Length;
+                }
+                if (StringIndexLength.ContainsKey(p.Name) || StringIndexLength.ContainsKey(p.Name.ToLower()))
+                {
+                    if (!StringIndexLength.TryGetValue(p.Name, out length))
+                        StringIndexLength.TryGetValue(p.Name.ToLower(), out length);
+                }
+                if (t == typeof(string))
+                {
+                    // TODO: case sensitive index
+                    return new StringIndexColumnDefinition(length);
+                }
+                return new MGIndexColumnDefinition(t, length);
+            }
+        }
+#pragma warning restore CS0618 // Type or member is obsolete
+
+        public abstract Type GetDocType();
     }
 
 
@@ -92,6 +157,10 @@ namespace RaptorDB
             CaseInsensitiveColumns = new List<string>();
             StringIndexLength = new Dictionary<string, byte>();
             NoIndexingColumns = new List<string>();
+            IndexDefinitions = new Dictionary<string, IViewColumnIndexDefinition>()
+            {
+                {"docid", new MGIndexColumnDefinition<Guid>(16) }
+            };
         }
 
         /// <summary>
@@ -100,11 +169,11 @@ namespace RaptorDB
         [XmlIgnore]
         public MapFunctionDelgate<T> Mapper { get; set; }
 
-        public Result<object> Verify()
+        public void Verify()
         {
-            if (Name == null || Name == "") 
+            if (Name == null || Name == "")
                 throw new Exception("Name must be given");
-            if (Schema == null) 
+            if (Schema == null)
                 throw new Exception("Schema must be defined");
             if (Schema.IsSubclassOf(typeof(RDBSchema)) == false)
             {
@@ -112,18 +181,27 @@ namespace RaptorDB
                 if (pi == null || pi.PropertyType != typeof(Guid))
                 {
                     var fi = Schema.GetField("docid");
-                    if( fi == null || fi.FieldType != typeof(Guid))
+                    if (fi == null || fi.FieldType != typeof(Guid))
                         throw new Exception("The schema must be derived from RaptorDB.RDBSchema or must contain a 'docid' Guid field or property");
                 }
             }
-            if (Mapper == null) 
+            if (Mapper == null)
                 throw new Exception("A map function must be defined");
 
             if (TransactionMode == true && isPrimaryList == false)
                 throw new Exception("Transaction mode can only be enabled on Primary Views");
-           
+
             // FEATURE : add more verifications
-            return new Result<object>(true);
         }
+
+        public override Type GetDocType()
+        {
+            return typeof(T);
+        }
+    }
+
+    public class View<TDoc, TSchema>: View<TDoc>
+    {
+
     }
 }

@@ -160,7 +160,7 @@ namespace RaptorDB
         /// <typeparam name="T"></typeparam>
         /// <param name="viewname"></param>
         /// <returns></returns>
-        public Result<object> Query(string viewname)
+        public IResult Query(string viewname)
         {
             return Query(viewname, 0, -1);
         }
@@ -171,7 +171,7 @@ namespace RaptorDB
         /// <param name="viewname"></param>
         /// <param name="filter"></param>
         /// <returns></returns>
-        public Result<object> Query(string viewname, string filter)
+        public IResult Query(string viewname, string filter)
         {
             return Query(viewname, filter, 0, -1);
         }
@@ -348,7 +348,7 @@ namespace RaptorDB
         /// <param name="start"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        public Result<object> Query(string viewname, int start, int count)
+        public IResult Query(string viewname, int start, int count)
         {
             return Query(viewname, "", start, count);
         }
@@ -361,7 +361,7 @@ namespace RaptorDB
         /// <param name="start"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        public Result<object> Query(string viewname, string filter, int start, int count, string orderby)
+        public IResult Query(string viewname, string filter, int start, int count, string orderby)
         {
             bool b = false;
             // check if return type exists and copy assembly if needed
@@ -392,7 +392,7 @@ namespace RaptorDB
             p.Count = count;
             p.OrderBy = orderby;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
-            return (Result<object>)ret.Data;
+            return (IResult)ret.Data;
         }
 
         /// <summary>
@@ -404,7 +404,7 @@ namespace RaptorDB
         /// <param name="start"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        public Result<object> Query<TRowSchema>(string viewname, Expression<Predicate<TRowSchema>> filter, int start, int count, string orderby)
+        public Result<TRowSchema> Query<TRowSchema>(string viewname, Expression<Predicate<TRowSchema>> filter, int start, int count, string orderby)
         {
             LINQString ls = new LINQString();
             ls.Visit(filter);
@@ -416,7 +416,7 @@ namespace RaptorDB
             p.Data = ls.sb.ToString();
             p.OrderBy = orderby;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
-            return (Result<object>)ret.Data;
+            return (Result<TRowSchema>)ret.Data;
         }
 
         /// <summary>
@@ -605,7 +605,7 @@ namespace RaptorDB
         /// <param name="start"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        public Result<object> Query(string viewname, string filter, int start, int count)
+        public IResult Query(string viewname, string filter, int start, int count)
         {
             return this.Query(viewname, filter, start, count, "");
         }
@@ -619,7 +619,7 @@ namespace RaptorDB
         /// <param name="start"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        public Result<object> Query<TRowSchema>(string viewname, Expression<Predicate<TRowSchema>> filter, int start, int count)
+        public IResult Query<TRowSchema>(string viewname, Expression<Predicate<TRowSchema>> filter, int start, int count)
         {
             return this.Query(viewname, filter, start, count, "");
         }

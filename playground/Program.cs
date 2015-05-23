@@ -20,7 +20,7 @@ namespace playground
 
             Console.WriteLine("opening db");
             var rap = OpenDB();
-            if (rap.Count("ModelItem") == 0) Insert(rap, 200000);
+            if (rap.Count("ModelItem") == 0) Insert(rap, 30000);
             // UpdateHF(rap, 3);
             QueryTest(rap);
             // rap.Shutdown();
@@ -124,6 +124,7 @@ namespace playground
             var sw = Stopwatch.StartNew();
             Console.WriteLine("inserting items");
             Parallel.ForEach(items, new ParallelOptions() { MaxDegreeOfParallelism = 8 }, item =>
+            //foreach(var item in items)
             {
                 Interlocked.Increment(ref i);
                 rap.Save(item.Id, item);

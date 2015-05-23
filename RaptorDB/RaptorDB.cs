@@ -204,7 +204,7 @@ namespace RaptorDB
         /// <typeparam name="T"></typeparam>
         /// <param name="viewname"></param>
         /// <returns></returns>
-        public Result<object> Query(string viewname)
+        public IResult Query(string viewname)
         {
             return _viewManager.Query(viewname, 0, -1);
         }
@@ -215,9 +215,9 @@ namespace RaptorDB
         /// <param name="viewname"></param>
         /// <param name="filter"></param>
         /// <returns></returns>
-        public Result<object> Query(string viewname, string filter)
+        public IResult Query(string viewname, string filter)
         {
-            if (filter == "")
+            if (string.IsNullOrEmpty(filter))
                 return _viewManager.Query(viewname, 0, -1);
 
             return _viewManager.Query(viewname, filter, 0, -1);
@@ -717,7 +717,7 @@ namespace RaptorDB
         /// <param name="start"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        public Result<object> Query(string viewname, int start, int count)
+        public IResult Query(string viewname, int start, int count)
         {
             return _viewManager.Query(viewname, start, count);
         }
@@ -730,7 +730,7 @@ namespace RaptorDB
         /// <param name="start"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        public Result<object> Query(string viewname, string filter, int start, int count)
+        public IResult Query(string viewname, string filter, int start, int count)
         {
             return _viewManager.Query(viewname, filter, start, count);
         }
@@ -1302,7 +1302,7 @@ namespace RaptorDB
         /// <param name="count"></param>
         /// <param name="orderby"></param>
         /// <returns></returns>
-        public Result<object> Query(string viewname, string filter, int start, int count, string orderby)
+        public IResult Query(string viewname, string filter, int start, int count, string orderby)
         {
             return _viewManager.Query(viewname, filter, start, count, orderby);
         }

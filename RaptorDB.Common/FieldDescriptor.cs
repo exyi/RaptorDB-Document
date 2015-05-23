@@ -5,7 +5,7 @@ using System.Text;
 using System.Reflection;
 using System.ComponentModel;
 
-namespace RaptorDB
+namespace RaptorDB.Common
 {
     internal class FieldPropertyDescriptor : PropertyDescriptor
     {

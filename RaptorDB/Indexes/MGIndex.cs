@@ -77,10 +77,11 @@ namespace RaptorDB
         /// <summary>
         /// lock read when reading anything and lock write if writing to pagelist and creating new pages
         /// </summary>
-        private ReaderWriterLockSlim _listLock = new ReaderWriterLockSlim(LockRecursionPolicy.SupportsRecursion);
+        private ReaderWriterLockSlim _listLock = new ReaderWriterLockSlim(LockRecursionPolicy.NoRecursion);
 
         public MGIndex(string path, string filename, byte keysize, ushort maxcount, bool allowdups)
         {
+            keysize = RDBDataType<T>.GetByteSize(keysize);
             _AllowDuplicates = allowdups;
             _index = new IndexFile<T>(path + Path.DirectorySeparatorChar + filename, keysize, maxcount);
             _maxPageItems = maxcount;

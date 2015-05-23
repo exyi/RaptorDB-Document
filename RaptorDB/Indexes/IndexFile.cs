@@ -20,7 +20,7 @@ namespace RaptorDB
             0,0,0,0          // 11 = last record number indexed 
             };
 
-        private byte[] _BlockHeader = new byte[] { 
+        private static readonly byte[] _BlockHeader = new byte[] { 
             (byte)'P',(byte)'A',(byte)'G',(byte)'E',
             0,               // 4 = [Flag] = 0=page 1=page list   
             0,0,             // 5 = [item count] 
@@ -63,7 +63,7 @@ namespace RaptorDB
                 // if file exists open and read header
                 _file = File.Open(filename, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
                 ReadFileHeader();
-                if (_externalStrings == false)// if the file says different
+                if (!_externalStrings)// if the file says different
                 {
                     _rowSize = (_maxKeySize + 1 + 4 + 4);
                 }

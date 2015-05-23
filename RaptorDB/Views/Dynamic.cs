@@ -65,15 +65,15 @@ namespace System.Linq.Dynamic
             return parser.Parse(resultType);
         }
 
-        public static LambdaExpression ParseLambda(Type itType, Type resultType, string expression, params object[] values)
+        public static Expression<TDelegate> ParseLambda<TDelegate>(Type itType, Type resultType, string expression, params object[] values)
         {
-            return ParseLambda(new ParameterExpression[] { Expression.Parameter(itType, "") }, resultType, expression, values);
+            return ParseLambda<TDelegate>(new ParameterExpression[] { Expression.Parameter(itType, "") }, resultType, expression, values);
         }
 
-        public static LambdaExpression ParseLambda(ParameterExpression[] parameters, Type resultType, string expression, params object[] values)
+        public static Expression<TDelegate> ParseLambda<TDelegate>(ParameterExpression[] parameters, Type resultType, string expression, params object[] values)
         {
             ExpressionParser parser = new ExpressionParser(parameters, expression, values);
-            return Expression.Lambda(parser.Parse(resultType), parameters);
+            return Expression.Lambda<TDelegate>(parser.Parse(resultType), parameters);
         }
 
         //public static Expression<Func<T, S>> ParseLambda<T, S>(string expression, params object[] values)

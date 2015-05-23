@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -6,12 +7,20 @@ using RaptorDB.Common;
 
 namespace RaptorDB
 {
+    public interface IResult
+    {
+        bool OK { get; }
+        Exception EX { get; }
+        int TotalCount { get; }
+        int Count { get; }
+        IList Rows { get; }
+    }
     /// <summary>
     /// Result of queries
     ///    OK : T = Query with data,  F = EX has the exception
     ///    Rows : query rows
     /// </summary>
-    public class Result<T>
+    public class Result<T>: IResult
     {
         public Result()
         {
@@ -39,6 +48,8 @@ namespace RaptorDB
         /// Rows returned
         /// </summary>
         public int Count { get; set; }
+
+        IList IResult.Rows { get { return Rows; } }
         public List<T> Rows { get; set; }
 
 

@@ -14,33 +14,84 @@ using System.ComponentModel;
 using RaptorDB.Common;
 using System.Threading;
 using fastJSON;
+using System.Runtime.InteropServices;
 
 namespace RaptorDB.Views
 {
-    public class ViewRowDefinition
-    {
-        public ViewRowDefinition()
-        {
-            Columns = new List<KeyValuePair<string, Type>>();
-        }
-        public string Name { get; set; }
-        public List<KeyValuePair<string, Type>> Columns { get; set; }
-
-        public void Add(string name, Type type)
-        {
-            Columns.Add(new KeyValuePair<string, Type>(name, type));
-        }
-    }
-
     internal class tran_data
     {
         public Guid docid;
         public Dictionary<Guid, List<object[]>> rows;
     }
 
-    internal class ViewHandler
+    public interface IViewHandler
     {
-        private ILog _log = LogManager.GetLogger(typeof(ViewHandler));
+        int NextRowNumber();
+        ViewBase View { get; }
+        Type GetFireOnType();
+        void FreeMemory();
+        void Commit(int id);
+        void RollBack(int id);
+        void Insert(Guid docid, object doc);
+        bool InsertTransaction(Guid docid, object doc);
+        void Shutdown();
+        void Delete(Guid docid);
+        int Count(string filter);
+        IResult Query(int start, int count);
+        IResult Query(int start, int count, string orderby);
+        IResult Query(string filter, int start, int count, string orderby);
+        int ViewDelete(string filter);
+        bool ViewInsert(Guid id, object row);
+
+        bool IsActive { get; }
+        bool BackgroundIndexing { get; }
+
+        ViewRowDefinition GetSchema();
+        void SetView(ViewBase view, IDocStorage<Guid> objStore);
+    }
+
+    internal interface IViewHandler<TSchema> : IViewHandler
+    {
+        Result<TSchema> Query(Expression<Predicate<TSchema>> filter, int start, int count, string orderby);
+        new Result<TSchema> Query(string filter, int start, int count, string orderby);
+        int Count(Expression<Predicate<TSchema>> filter);
+        int ViewDelete(Expression<Predicate<TSchema>> filter);
+    }
+
+    internal class ViewHandler<TDoc, TSchema> : IViewHandler<TSchema>
+    {
+        private RowFill<TSchema> _rowfiller;
+        private View<TDoc> _view;
+        ViewBase.MapFunctionDelgate<TDoc> mapper;
+        protected static readonly string _S = Path.DirectorySeparatorChar.ToString();
+
+        protected ILog _log = LogManager.GetLogger(typeof(ViewHandler<TDoc, TSchema>));
+        protected string _Path;
+        protected ViewManager _viewmanager;
+        protected Dictionary<string, IIndex> _indexes = new Dictionary<string, IIndex>();
+        protected StorageFile<Guid> _viewData;
+        protected BoolIndex _deletedRows;
+        protected string _docid = "docid";
+        protected string[] _colnames = new string[0];
+        protected ViewRowDefinition _schema;
+        protected SafeDictionary<int, tran_data> _transactions = new SafeDictionary<int, tran_data>();
+        protected SafeDictionary<string, int> _nocase = new SafeDictionary<string, int>();
+        protected Dictionary<string, byte> _idxlen = new Dictionary<string, byte>();
+
+        protected System.Timers.Timer _saveTimer;
+
+        protected Type basetype; // used for mapper
+
+        bool _isDirty = false;
+        protected bool _stsaving = false;
+
+        protected const string _dirtyFilename = "temp.$";
+        protected const int _RaptorDBVersion = 4; // used for engine changes to views
+        protected const string _RaptorDBVersionFilename = "RaptorDB.version";
+
+        public ViewBase View { get { return _view; } }
+        public bool BackgroundIndexing { get { return _view.BackgroundIndexing; } }
+        public bool IsActive { get { return _view.isActive; } }
 
         public ViewHandler(string path, ViewManager manager)
         {
@@ -48,29 +99,6 @@ namespace RaptorDB.Views
             _viewmanager = manager;
         }
 
-        private string _S = Path.DirectorySeparatorChar.ToString();
-        private string _Path = "";
-        private ViewManager _viewmanager;
-        internal ViewBase _view;
-        private Dictionary<string, IIndex> _indexes = new Dictionary<string, IIndex>();
-        private StorageFile<Guid> _viewData;
-        private BoolIndex _deletedRows;
-        private string _docid = "docid";
-        private List<string> _colnames = new List<string>();
-        private RowFill _rowfiller;
-        private ViewRowDefinition _schema;
-        private SafeDictionary<int, tran_data> _transactions = new SafeDictionary<int, tran_data>();
-        private SafeDictionary<string, int> _nocase = new SafeDictionary<string, int>();
-        private Dictionary<string, byte> _idxlen = new Dictionary<string, byte>();
-
-        private System.Timers.Timer _saveTimer;
-        Type basetype; // used for mapper
-        dynamic mapper;
-        bool _isDirty = false;
-        private string _dirtyFilename = "temp.$";
-        private bool _stsaving = false;
-        private int _RaptorDBVersion = 3; // used for engine changes to views
-        private string _RaptorDBVersionFilename = "RaptorDB.version";
 
         private object _stlock = new object();
         void _saveTimer_Elapsed(object sender, System.Timers.ElapsedEventArgs e)
@@ -91,15 +119,16 @@ namespace RaptorDB.Views
             return basetype;
         }
 
-        internal void SetView<T>(View<T> view, IDocStorage<Guid> docs)
+        /// <summary>
+        /// Inits directory structure, deleted index, storage and checks if rebuild
+        /// </summary>
+        /// <returns>rebuild</returns>
+        protected bool InitStorage(string viewName, int viewVersion)
         {
             bool rebuild = false;
-            _view = view;
-            // generate schemacolumns from schema
-            GenerateSchemaColumns(_view);
 
-            if (_Path.EndsWith(_S) == false) _Path += _S;
-            _Path += view.Name + _S;
+            if (!_Path.EndsWith(_S)) _Path += _S;
+            _Path += viewName + _S;
             if (Directory.Exists(_Path) == false)
             {
                 Directory.CreateDirectory(_Path);
@@ -109,10 +138,10 @@ namespace RaptorDB.Views
             {
                 // read version file and check with view
                 int version = 0;
-                if (File.Exists(_Path + _view.Name + ".version"))
+                if (File.Exists(_Path + viewName + ".version"))
                 {
-                    int.TryParse(File.ReadAllText(_Path + _view.Name + ".version"), out version);
-                    if (version != view.Version)
+                    int.TryParse(File.ReadAllText(_Path + viewName + ".version"), out version);
+                    if (version != viewVersion)
                     {
                         _log.Debug("Newer view version detected");
                         rebuild = true;
@@ -122,7 +151,7 @@ namespace RaptorDB.Views
 
             if (File.Exists(_Path + _dirtyFilename))
             {
-                _log.Debug("Last shutdown failed, rebuilding view : " + _view.Name);
+                _log.Debug("Last shutdown failed, rebuilding view : " + viewName);
                 rebuild = true;
             }
 
@@ -134,40 +163,53 @@ namespace RaptorDB.Views
                 int.TryParse(s, out version);
                 if (version != _RaptorDBVersion)
                 {
-                    _log.Debug("RaptorDB view engine upgrade, rebuilding view : " + _view.Name);
+                    _log.Debug("RaptorDB view engine upgrade, rebuilding view : " + viewName);
                     rebuild = true;
                 }
             }
             else
             {
-                _log.Debug("RaptorDB view engine upgrade, rebuilding view : " + _view.Name);
+                _log.Debug("RaptorDB view engine upgrade, rebuilding view : " + viewName);
                 rebuild = true;
             }
 
             if (rebuild)
             {
-                _log.Debug("Deleting old view data folder = " + view.Name);
+                _log.Debug("Deleting old view data folder = " + viewName);
                 Directory.Delete(_Path, true);
                 Directory.CreateDirectory(_Path);
             }
-            // load indexes here
+
+
+            _deletedRows = new BoolIndex(_Path, viewName, ".deleted");
+
+            _viewData = new StorageFile<Guid>(_Path + viewName + ".mgdat");
+
+            return rebuild;
+        }
+
+        void IViewHandler.SetView(ViewBase view, IDocStorage<Guid> objStore)
+        {
+            SetView((View<TDoc>)view, objStore);
+        }
+        public void SetView(View<TDoc> view, IDocStorage<Guid> docs)
+        {
+            this._view = view;
+            view.AutoInitIndexDefinitions();
+            _schema = new ViewRowDefinition()
+            {
+                Name = _view.Name,
+                Columns = view.IndexDefinitions.ToList()
+            };
+            _colnames = _schema.Columns.Select(v => v.Key).Where(c => c != _docid).ToArray();
+
+            var rebuild = InitStorage(view.Name, view.Version);
+
             CreateLoadIndexes(_schema);
 
-            _deletedRows = new BoolIndex(_Path, _view.Name , ".deleted");
-
-            _viewData = new StorageFile<Guid>(_Path + view.Name + ".mgdat");
-
-            CreateResultRowFiller();
-
             mapper = view.Mapper;
-            // looking for the T in View<T>
-            if (view.GetType().GetGenericArguments().Length == 1) // HACK : kludge change when possible 
-                basetype = view.GetType().GetGenericArguments()[0];
-            else
-            {
-                // or recurse until found
-                basetype = view.GetType().BaseType.GetGenericArguments()[0];
-            }
+
+            basetype = view.GetDocType();
 
             if (rebuild)
                 Task.Factory.StartNew(() => RebuildFromScratch(docs));
@@ -179,7 +221,7 @@ namespace RaptorDB.Views
             _saveTimer.Start();
         }
 
-        internal void FreeMemory()
+        public void FreeMemory()
         {
             _log.Debug("free memory : " + _view.Name);
             foreach (var i in _indexes)
@@ -189,11 +231,11 @@ namespace RaptorDB.Views
             InvalidateSortCache();
         }
 
-        internal void Commit(int ID)
+        public void Commit(int id)
         {
             tran_data data = null;
             // save data to indexes
-            if (_transactions.TryGetValue(ID, out data))
+            if (_transactions.TryGetValue(id, out data))
             {
                 // delete any items with docid in view
                 if (_view.DeleteBeforeInsert)
@@ -201,31 +243,35 @@ namespace RaptorDB.Views
                 SaveAndIndex(data.rows);
             }
             // remove in memory data
-            _transactions.Remove(ID);
+            _transactions.Remove(id);
         }
 
-        internal void RollBack(int ID)
+        public void RollBack(int ID)
         {
             // remove in memory data
             _transactions.Remove(ID);
         }
 
-        internal void Insert<T>(Guid guid, T doc)
+        void IViewHandler.Insert(Guid docid, object doc)
         {
+            Insert(docid, (TDoc)doc);
+        }
+        public void Insert(Guid guid, TDoc doc)
+        {
+            // TODO: optimize (allocation)
             apimapper api = new apimapper(_viewmanager, this);
 
             if (basetype == doc.GetType())
             {
-                View<T> view = _view as View<T>;
-                if (view.Mapper != null)
-                    view.Mapper(api, guid, doc);
+                if (_view.Mapper != null)
+                    _view.Mapper(api, guid, doc);
             }
             else if (mapper != null)
                 mapper(api, guid, doc);
 
             // map objects to rows
             foreach (var d in api.emitobj)
-                api.emit.Add(d.Key, ExtractRows(d.Value));
+                api.emit.Add(d.Key, ViewSchemaHelper.ExtractRows(d.Value, _colnames));
 
             // delete any items with docid in view
             if (_view.DeleteBeforeInsert)
@@ -244,12 +290,17 @@ namespace RaptorDB.Views
             InvalidateSortCache();
         }
 
-        internal bool InsertTransaction<T>(Guid docid, T doc)
+        bool IViewHandler.InsertTransaction(Guid docid, object doc)
+        {
+            return InsertTransaction(docid, (TDoc)doc);
+        }
+
+        public bool InsertTransaction(Guid docid, TDoc doc)
         {
             apimapper api = new apimapper(_viewmanager, this);
             if (basetype == doc.GetType())
             {
-                View<T> view = (View<T>)_view;
+                var view = _view;
 
                 try
                 {
@@ -270,10 +321,10 @@ namespace RaptorDB.Views
 
             // map emitobj -> rows
             foreach (var d in api.emitobj)
-                api.emit.Add(d.Key, ExtractRows(d.Value));
+                api.emit.Add(d.Key, ViewSchemaHelper.ExtractRows(d.Value, _colnames));
 
             //Dictionary<Guid, List<object[]>> rows = new Dictionary<Guid, List<object[]>>();
-            tran_data data = new tran_data();
+            tran_data data;
             if (_transactions.TryGetValue(Thread.CurrentThread.ManagedThreadId, out data))
             {
                 // TODO : exists -> merge data??
@@ -290,58 +341,27 @@ namespace RaptorDB.Views
         }
 
         // FEATURE : add query caching here
-        SafeDictionary<string, LambdaExpression> _lambdacache = new SafeDictionary<string, LambdaExpression>();
-        internal Result<object> Query(string filter, int start, int count)
+        public Result<TSchema> Query(string filter, int start, int count)
         {
             return Query(filter, start, count, "");
         }
 
-        internal Result<object> Query(string filter, int start, int count, string orderby)
+        IResult IViewHandler.Query(string filter, int start, int count, string orderby)
         {
-            filter = filter.Trim();
-            if (filter == "")
-                return Query(start, count, orderby);
-
-            DateTime dt = FastDateTime.Now;
-            _log.Debug("query : " + _view.Name);
-            _log.Debug("query : " + filter);
-            _log.Debug("orderby : " + orderby);
-
-            WAHBitArray ba = new WAHBitArray();
-            var delbits = _deletedRows.GetBits();
-            if (filter != "")
-            {
-                LambdaExpression le = null;
-                if (_lambdacache.TryGetValue(filter, out le) == false)
-                {
-                    le = System.Linq.Dynamic.DynamicExpression.ParseLambda(_view.Schema, typeof(bool), filter, null);
-                    _lambdacache.Add(filter, le);
-                }
-                QueryVisitor qv = new QueryVisitor(QueryColumnExpression);
-                qv.Visit(le.Body);
-
-                ba = ((WAHBitArray)qv._bitmap.Pop()).AndNot(delbits);
-            }
-            else
-                ba = WAHBitArray.Fill(_viewData.Count()).AndNot(delbits);
-
-            var order = SortBy(orderby);
-            bool desc = false;
-            if (orderby.ToLower().Contains(" desc"))
-                desc = true;
-            _log.Debug("query bitmap done (ms) : " + FastDateTime.Now.Subtract(dt).TotalMilliseconds);
-            dt = FastDateTime.Now;
-            // exec query return rows
-            return ReturnRows<object>(ba, null, start, count, order, desc);
+            return Query(filter, start, count, orderby);
+        }
+        public Result<TSchema> Query(string filter, int start, int count, string orderby)
+        {
+            return Query(ParseFilter(filter), start, count, orderby);
         }
 
-        internal Result<object> Query<T>(Expression<Predicate<T>> filter, int start, int count)
+        public Result<TSchema> Query(Expression<Predicate<TSchema>> filter, int start, int count)
         {
-            return Query<T>(filter, start, count, "");
+            return Query(filter, start, count, "");
         }
 
         // FEATURE : add query caching here
-        internal Result<object> Query<T>(Expression<Predicate<T>> filter, int start, int count, string orderby)
+        public Result<TSchema> Query(Expression<Predicate<TSchema>> filter, int start, int count, string orderby)
         {
             if (filter == null)
                 return Query(start, count);
@@ -349,26 +369,23 @@ namespace RaptorDB.Views
             DateTime dt = FastDateTime.Now;
             _log.Debug("query : " + _view.Name);
 
-            WAHBitArray ba = new WAHBitArray();
-
             QueryVisitor qv = new QueryVisitor(QueryColumnExpression);
             qv.Visit(filter);
             var delbits = _deletedRows.GetBits();
-            ba = ((WAHBitArray)qv._bitmap.Pop()).AndNot(delbits);
-            List<T> trows = null;
-            if (_viewmanager.inTransaction())
+            var ba = ((WAHBitArray)qv._bitmap.Pop()).AndNot(delbits);
+            List<TSchema> trows = null;
+            if (_view.TransactionMode)
             {
                 // query from transaction own data
                 tran_data data = null;
                 if (_transactions.TryGetValue(Thread.CurrentThread.ManagedThreadId, out data))
                 {
-                    List<T> rrows = new List<T>();
+                    var rrows = new List<TSchema>();
                     foreach (var kv in data.rows)
                     {
                         foreach (var r in kv.Value)
                         {
-                            object o = FastCreateObject(_view.Schema);
-                            rrows.Add((T)_rowfiller(o, r));
+                            rrows.Add(_rowfiller(r));
                         }
                     }
                     trows = rrows.FindAll(filter.Compile());
@@ -376,28 +393,33 @@ namespace RaptorDB.Views
             }
 
             var order = SortBy(orderby);
-            bool desc = false;
-            if (orderby.ToLower().Contains(" desc"))
-                desc = true;
+            bool desc = orderby.EndsWith(" desc", StringComparison.InvariantCultureIgnoreCase);
             _log.Debug("query bitmap done (ms) : " + FastDateTime.Now.Subtract(dt).TotalMilliseconds);
-            dt = FastDateTime.Now;
             // exec query return rows
-            return ReturnRows<T>(ba, trows, start, count, order, desc);
+            return ReturnRows(ba, trows, start, count, order, desc);
         }
 
-        internal Result<object> Query(int start, int count)
+        IResult IViewHandler.Query(int start, int count)
+        {
+            return Query(start, count);
+        }
+        public Result<TSchema> Query(int start, int count)
         {
             return Query(start, count, "");
         }
 
-        internal Result<object> Query(int start, int count, string orderby)
+        IResult IViewHandler.Query(int start, int count, string orderby)
+        {
+            return Query(start, count, orderby);
+        }
+        public Result<TSchema> Query(int start, int count, string orderby)
         {
             // no filter query -> just show all the data
             DateTime dt = FastDateTime.Now;
             _log.Debug("query : " + _view.Name);
             int totalviewrows = _viewData.Count();
-            List<object> rows = new List<object>();
-            Result<object> ret = new Result<object>();
+            var rows = new List<TSchema>();
+            var ret = new Result<TSchema>();
             int skip = start;
             int cc = 0;
             WAHBitArray del = _deletedRows.GetBits();
@@ -418,7 +440,7 @@ namespace RaptorDB.Views
             {
                 for (int idx = 0; idx < len; idx++)
                 {
-                    extractrowobject(count, rows, ref skip, ref cc, del, order, idx);
+                    OutputRow(rows, idx, count, ref skip, ref cc, del, order);
                     if (cc == count) break;
                 }
             }
@@ -426,7 +448,7 @@ namespace RaptorDB.Views
             {
                 for (int idx = len - 1; idx >= 0; idx--)
                 {
-                    extractrowobject(count, rows, ref skip, ref cc, del, order, idx);
+                    OutputRow(rows, idx, count, ref skip, ref cc, del, order);
                     if (cc == count) break;
                 }
             }
@@ -440,7 +462,27 @@ namespace RaptorDB.Views
             return ret;
         }
 
-        private void extractrowobject(int count, List<object> rows, ref int skip, ref int cc, WAHBitArray del, List<int> order, int idx)
+
+        /// <summary>
+        /// Adds item with idnex 'idx' to 'rows'
+        /// </summary>
+        /// <returns>if something was added</returns>
+        private bool OutputRow(List<TSchema> rows, int idx)
+        {
+            byte[] b = _viewData.ViewReadRawBytes(idx);
+            if (b != null)
+            {
+                object[] data = (object[])fastBinaryJSON.BJSON.ToObject(b);
+                rows.Add(_rowfiller(data));
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Adds item with idnex 'order[idx]' to 'rows' if skipped == 0 and not in del 
+        /// </summary>
+        private void OutputRow(List<TSchema> rows, int idx, int count, ref int skip, ref int currentCount, WAHBitArray del, List<int> order)
         {
             int i = order[idx];
             if (del.Get(i) == false)
@@ -449,19 +491,35 @@ namespace RaptorDB.Views
                     skip--;
                 else
                 {
-                    bool b = OutputRow<object>(rows, i);
+                    bool b = OutputRow(rows, i);
                     if (b && count > 0)
-                        cc++;
+                        currentCount++;
                 }
             }
         }
 
-        internal void Shutdown()
+        private void extractsortrowobject(WAHBitArray ba, int count, List<int> orderby, List<TSchema> rows, ref int skip, ref int c, int idx)
+        {
+            int i = orderby[idx];
+            if (ba.Get(i))
+            {
+                if (skip > 0)
+                    skip--;
+                else
+                {
+                    bool b = OutputRow(rows, i);
+                    if (b && count > 0)
+                        c++;
+                }
+                ba.Set(i, false);
+            }
+        }
+
+        public void Shutdown()
         {
             try
             {
-                lock (_stlock)
-                    _saveTimer.Enabled = false;
+                _saveTimer.Enabled = false;
                 while (_stsaving)
                     Thread.Sleep(1);
 
@@ -498,7 +556,7 @@ namespace RaptorDB.Views
             }
         }
 
-        internal void Delete(Guid docid)
+        public void Delete(Guid docid)
         {
             DeleteRowsWith(docid);
 
@@ -507,64 +565,11 @@ namespace RaptorDB.Views
 
         #region [  private methods  ]
 
-        private void CreateResultRowFiller()
-        {
-            _rowfiller = (RowFill)CreateRowFillerDelegate(_view.Schema);
-            // init the row create 
-            _createrow = null;
-            FastCreateObject(_view.Schema);
-        }
-
-        public delegate object RowFill(object o, object[] data);
-        public static RowFill CreateRowFillerDelegate(Type objtype)
-        {
-            DynamicMethod dynMethod = new DynamicMethod("_", typeof(object), new Type[] { typeof(object), typeof(object[]) });
-            ILGenerator il = dynMethod.GetILGenerator();
-            var local = il.DeclareLocal(objtype);
-            il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Castclass, objtype);
-            il.Emit(OpCodes.Stloc, local);
-            int i = 1;
-
-            foreach (var c in objtype.GetFields())
-            {
-                il.Emit(OpCodes.Ldloc, local);
-                il.Emit(OpCodes.Ldarg_1);
-                if (c.Name != "docid")
-                    il.Emit(OpCodes.Ldc_I4, i++);
-                else
-                    il.Emit(OpCodes.Ldc_I4, 0);
-
-                il.Emit(OpCodes.Ldelem_Ref);
-                il.Emit(OpCodes.Unbox_Any, c.FieldType);
-                il.Emit(OpCodes.Stfld, c);
-            }
-
-            foreach (var c in objtype.GetProperties())
-            {
-                MethodInfo setMethod = c.GetSetMethod();
-                il.Emit(OpCodes.Ldloc, local);
-                il.Emit(OpCodes.Ldarg_1);
-                if (c.Name != "docid")
-                    il.Emit(OpCodes.Ldc_I4, i++);
-                else
-                    il.Emit(OpCodes.Ldc_I4, 0);
-                il.Emit(OpCodes.Ldelem_Ref);
-                il.Emit(OpCodes.Unbox_Any, c.PropertyType);
-                il.EmitCall(OpCodes.Callvirt, setMethod, null);
-            }
-
-            il.Emit(OpCodes.Ldloc, local);
-            il.Emit(OpCodes.Ret);
-
-            return (RowFill)dynMethod.CreateDelegate(typeof(RowFill));
-        }
-
-        private Result<object> ReturnRows<T>(WAHBitArray ba, List<T> trows, int start, int count, List<int> orderby, bool descending)
+        private Result<TSchema> ReturnRows(WAHBitArray ba, List<TSchema> trows, int start, int count, List<int> orderby, bool descending)
         {
             DateTime dt = FastDateTime.Now;
-            List<object> rows = new List<object>();
-            Result<object> ret = new Result<object>();
+            List<TSchema> rows = new List<TSchema>();
+            Result<TSchema> ret = new Result<TSchema>();
             int skip = start;
             int c = 0;
             ret.TotalCount = (int)ba.CountOnes();
@@ -599,7 +604,7 @@ namespace RaptorDB.Views
                             skip--;
                         else
                         {
-                            bool b = OutputRow<object>(rows, i);
+                            bool b = OutputRow(rows, i);
                             if (b && count > 0)
                                 c++;
                         }
@@ -618,137 +623,6 @@ namespace RaptorDB.Views
             return ret;
         }
 
-        private void extractsortrowobject(WAHBitArray ba, int count, List<int> orderby, List<object> rows, ref int skip, ref int c, int idx)
-        {
-            int i = orderby[idx];
-            if (ba.Get(i))
-            {
-                if (skip > 0)
-                    skip--;
-                else
-                {
-                    bool b = OutputRow<object>(rows, i);
-                    if (b && count > 0)
-                        c++;
-                }
-                ba.Set(i, false);
-            }
-        }
-
-        private bool OutputRow<T>(List<T> rows, int i)
-        {
-            byte[] b = _viewData.ViewReadRawBytes(i);
-            if (b != null)
-            {
-                object o = FastCreateObject(_view.Schema);
-                object[] data = (object[])fastBinaryJSON.BJSON.ToObject(b);
-                rows.Add((T)_rowfiller(o, data));
-                return true;
-            }
-            return false;
-        }
-
-        private Result<T> ReturnRows2<T>(WAHBitArray ba, List<T> trows, int start, int count, List<int> orderby, bool descending)
-        {
-            DateTime dt = FastDateTime.Now;
-            List<T> rows = new List<T>();
-            Result<T> ret = new Result<T>();
-            int skip = start;
-            int c = 0;
-            ret.TotalCount = (int)ba.CountOnes();
-            if (count == -1) count = ret.TotalCount;
-            if (count > 0)
-            {
-                int len = orderby.Count;
-                if (len > 0)
-                {
-                    if (descending == false)
-                    {
-                        for (int idx = 0; idx < len; idx++) //foreach (int i in orderby)
-                        {
-                            extractsortrowT(ba, count, orderby, rows, ref skip, ref c, idx);
-                            if (c == count) break;
-                        }
-                    }
-                    else
-                    {
-                        for (int idx = len - 1; idx >= 0; idx--) //foreach (int i in orderby)
-                        {
-                            extractsortrowT(ba, count, orderby, rows, ref skip, ref c, idx);
-                            if (c == count) break;
-                        }
-                    }
-                }
-                foreach (int i in ba.GetBitIndexes())
-                {
-                    if (c < count)
-                    {
-                        if (skip > 0)
-                            skip--;
-                        else
-                        {
-                            bool b = OutputRow<T>(rows, i);
-                            if (b && count > 0)
-                                c++;
-                        }
-                        if (c == count) break;
-                    }
-                }
-            }
-            if (trows != null)// TODO : move to start and decrement in count
-                foreach (var o in trows)
-                    rows.Add(o);
-            _log.Debug("query rows fetched (ms) : " + FastDateTime.Now.Subtract(dt).TotalMilliseconds);
-            _log.Debug("query rows count : " + rows.Count.ToString("#,0"));
-            ret.OK = true;
-            ret.Count = rows.Count;
-            ret.Rows = rows;
-            return ret;
-        }
-
-        private void extractsortrowT<T>(WAHBitArray ba, int count, List<int> orderby, List<T> rows, ref int skip, ref int c, int idx)
-        {
-            int i = orderby[idx];
-            if (ba.Get(i))
-            {
-                if (skip > 0)
-                    skip--;
-                else
-                {
-                    bool b = OutputRow<T>(rows, i);
-                    if (b && count > 0)
-                        c++;
-                }
-                ba.Set(i, false);
-            }
-        }
-
-        private CreateRow _createrow = null;
-        private delegate object CreateRow();
-        private object FastCreateObject(Type objtype)
-        {
-            try
-            {
-                if (_createrow != null)
-                    return _createrow();
-                else
-                {
-                    DynamicMethod dynMethod = new DynamicMethod("_", objtype, null);
-                    ILGenerator ilGen = dynMethod.GetILGenerator();
-
-                    ilGen.Emit(OpCodes.Newobj, objtype.GetConstructor(Type.EmptyTypes));
-                    ilGen.Emit(OpCodes.Ret);
-                    _createrow = (CreateRow)dynMethod.CreateDelegate(typeof(CreateRow));
-                    return _createrow();
-                }
-            }
-            catch (Exception exc)
-            {
-                throw new Exception(string.Format("Failed to fast create instance for type '{0}' from assemebly '{1}'",
-                    objtype.FullName, objtype.AssemblyQualifiedName), exc);
-            }
-        }
-
         MethodInfo insertmethod = null;
         bool _rebuilding = false;
         private void RebuildFromScratch(IDocStorage<Guid> docs)
@@ -756,7 +630,6 @@ namespace RaptorDB.Views
             _rebuilding = true;
             try
             {
-                insertmethod = this.GetType().GetMethod("Insert", BindingFlags.Instance | BindingFlags.NonPublic);
                 _log.Debug("Rebuilding view from scratch...");
                 _log.Debug("View = " + _view.Name);
                 DateTime dt = FastDateTime.Now;
@@ -765,35 +638,24 @@ namespace RaptorDB.Views
                 for (int i = 0; i < c; i++)
                 {
                     StorageItem<Guid> meta = null;
-                    object b = docs.GetObject(i, out meta);
+                    object obj = docs.GetObject(i, out meta);
                     if (meta != null && meta.isDeleted)
                         Delete(meta.key);
-                    else
+                    else if (obj is View_delete)
                     {
-                        if (b != null)
-                        {
-                            object obj = b;
-                            Type t = obj.GetType();
-                            if (t == typeof(View_delete))
-                            {
-                                View_delete vd = (View_delete)obj;
-                                if (vd.Viewname.ToLower() == this._view.Name.ToLower())
-                                    ViewDelete(vd.Filter);
-                            }
-                            else if (t == typeof(View_insert))
-                            {
-                                View_insert vi = (View_insert)obj;
-                                if (vi.Viewname.ToLower() == this._view.Name.ToLower())
-                                    ViewInsert(vi.ID, vi.RowObject);
-                            }
-                            else if (t.IsSubclassOf(basetype) || t == basetype)
-                            {
-                                var m = insertmethod.MakeGenericMethod(new Type[] { obj.GetType() });
-                                m.Invoke(this, new object[] { meta.key, obj });
-                            }
-                        }
-                        else
-                            _log.Error("Doc is null : " + meta.key);
+                        View_delete vd = (View_delete)obj;
+                        if (vd.Viewname.Equals(this._view.Name, StringComparison.InvariantCultureIgnoreCase))
+                            ViewDelete(vd.Filter);
+                    }
+                    else if (obj is View_insert)
+                    {
+                        View_insert vi = (View_insert)obj;
+                        if (vi.Viewname.Equals(this._view.Name.ToLower(), StringComparison.InvariantCultureIgnoreCase))
+                            ViewInsert(vi.ID, vi.RowObject);
+                    }
+                    else if (obj is TDoc)
+                    {
+                        Insert(meta.key, (TDoc)obj);
                     }
                 }
                 _log.Debug("rebuild view '" + _view.Name + "' done (s) = " + FastDateTime.Now.Subtract(dt).TotalSeconds);
@@ -808,123 +670,14 @@ namespace RaptorDB.Views
             _rebuilding = false;
         }
 
-        private object CreateObject(byte[] b)
-        {
-            if (b[0] < 32)
-                return fastBinaryJSON.BJSON.ToObject(b);
-            else
-                return fastJSON.JSON.ToObject(Encoding.ASCII.GetString(b));
-        }
-
         private void CreateLoadIndexes(ViewRowDefinition viewRowDefinition)
         {
-            int i = 0;
             _indexes.Add(_docid, new TypeIndexes<Guid>(_Path, _docid, 16/*, allowDups: !_view.DeleteBeforeInsert*/));
             // load indexes
             foreach (var c in viewRowDefinition.Columns)
             {
                 if (c.Key != "docid")
-                    _indexes.Add(_schema.Columns[i].Key,
-                              CreateIndex(
-                                _schema.Columns[i].Key,
-                                _schema.Columns[i].Value));
-                i++;
-            }
-        }
-
-        private void GenerateSchemaColumns(ViewBase _view)
-        {
-            // generate schema columns from schema
-            _schema = new ViewRowDefinition();
-            _schema.Name = _view.Name;
-
-            foreach (var p in _view.Schema.GetProperties())
-            {
-                Type t = p.PropertyType;
-
-                if (_view.NoIndexingColumns.Contains(p.Name) || _view.NoIndexingColumns.Contains(p.Name.ToLower()))
-                {
-                    _schema.Add(p.Name, typeof(NoIndexing));
-                }
-                else
-                {
-                    if (p.GetCustomAttributes(typeof(FullTextAttribute), true).Length > 0)
-                        t = typeof(FullTextString);
-                    if (_view.FullTextColumns.Contains(p.Name) || _view.FullTextColumns.Contains(p.Name.ToLower()))
-                        t = typeof(FullTextString);
-                    if (p.Name != "docid")
-                        _schema.Add(p.Name, t);
-
-                    if (p.GetCustomAttributes(typeof(CaseInsensitiveAttribute), true).Length > 0)
-                        _nocase.Add(p.Name, 0);
-                    if (_view.CaseInsensitiveColumns.Contains(p.Name) || _view.CaseInsensitiveColumns.Contains(p.Name.ToLower()))
-                        _nocase.Add(p.Name, 0);
-
-                    var a = p.GetCustomAttributes(typeof(StringIndexLength), false);
-                    if (a.Length > 0)
-                    {
-                        byte l = (a[0] as StringIndexLength).Length;
-                        _idxlen.Add(p.Name, l);
-                    }
-                    if (_view.StringIndexLength.ContainsKey(p.Name) || _view.StringIndexLength.ContainsKey(p.Name.ToLower()))
-                    {
-                        byte b = 0;
-                        if (_view.StringIndexLength.TryGetValue(p.Name, out b))
-                            _idxlen.Add(p.Name, b);
-                        if (_view.StringIndexLength.TryGetValue(p.Name.ToLower(), out b))
-                            _idxlen.Add(p.Name, b);
-                    }
-                }
-            }
-
-            foreach (var f in _view.Schema.GetFields())
-            {
-                Type t = f.FieldType;
-                if (_view.NoIndexingColumns.Contains(f.Name) || _view.NoIndexingColumns.Contains(f.Name.ToLower()))
-                {
-                    _schema.Add(f.Name, typeof(NoIndexing));
-                }
-                else
-                {
-                    if (f.GetCustomAttributes(typeof(FullTextAttribute), true).Length > 0)
-                        t = typeof(FullTextString);
-                    if (_view.FullTextColumns.Contains(f.Name) || _view.FullTextColumns.Contains(f.Name.ToLower()))
-                        t = typeof(FullTextString);
-                    if (f.Name != "docid")
-                        _schema.Add(f.Name, t);
-
-                    if (f.GetCustomAttributes(typeof(CaseInsensitiveAttribute), true).Length > 0)
-                        _nocase.Add(f.Name, 0);
-                    if (_view.CaseInsensitiveColumns.Contains(f.Name) || _view.CaseInsensitiveColumns.Contains(f.Name.ToLower()))
-                        _nocase.Add(f.Name, 0);
-
-                    var a = f.GetCustomAttributes(typeof(StringIndexLength), false);
-                    if (a.Length > 0)
-                    {
-                        byte l = (a[0] as StringIndexLength).Length;
-                        _idxlen.Add(f.Name, l);
-                    }
-                    if (_view.StringIndexLength.ContainsKey(f.Name) || _view.StringIndexLength.ContainsKey(f.Name.ToLower()))
-                    {
-                        byte b = 0;
-                        if (_view.StringIndexLength.TryGetValue(f.Name, out b))
-                            _idxlen.Add(f.Name, b);
-                        if (_view.StringIndexLength.TryGetValue(f.Name.ToLower(), out b))
-                            _idxlen.Add(f.Name, b);
-                    }
-                }
-            }
-            _schema.Add("docid", typeof(Guid));
-
-            foreach (var s in _schema.Columns)
-                _colnames.Add(s.Key);
-
-            // set column index for nocase
-            for (int i = 0; i < _colnames.Count; i++)
-            {
-                int j = 0;
-                if (_nocase.TryGetValue(_colnames[i], out j))
-                    _nocase[_colnames[i]] = i;
+                    _indexes.Add(c.Key, c.Value.CreateIndex(_Path, c.Key));
             }
         }
 
@@ -942,88 +695,19 @@ namespace RaptorDB.Views
 
                 int rownum = (int)_viewData.WriteRawData(b);
 
-                // case insensitve columns here
-                foreach (var kv in _nocase)
-                    row[kv.Value] = ("" + row[kv.Value]).ToLowerInvariant();
-
                 IndexRow(guid, row, rownum);
             }
         }
 
-        private List<object[]> ExtractRows(List<object> rows)
+        private void IndexRow(Guid id, object[] row, int rownum)
         {
-            List<object[]> output = new List<object[]>();
-            // reflection match object properties to the schema row
-
-            int colcount = _schema.Columns.Count;
-
-            foreach (var obj in rows)
+            _indexes[_docid].Set(id, rownum);
+            for (int i = 0; i < row.Length; i++)
             {
-                object[] r = new object[colcount];
-                Getters[] getters = Reflection.Instance.GetGetters(obj.GetType(), true, null);
-
-                for (int i = 0; i < colcount; i++)
-                {
-                    var c = _schema.Columns[i];
-                    foreach (var g in getters)
-                    {
-                        //var g = getters[ii];
-                        if (g.Name == c.Key)
-                        {
-                            r[i] = g.Getter(obj);
-                            break;
-                        }
-                    }
-                }
-                output.Add(r);
-            }
-
-            return output;
-        }
-
-        private void IndexRow(Guid docid, object[] row, int rownum)
-        {
-            int c = _colnames.Count - 1; // skip last docid 
-            _indexes[_docid].Set(docid, rownum);
-
-            for (int i = 0; i < c; i++)
-            {
-                object d = row[i];
-                var idx = _indexes[_colnames[i]];
-                if (idx != null)
-                    idx.Set(d, rownum);
+                _indexes[_colnames[i]].Set(row[i], rownum);
             }
         }
 
-        private IIndex CreateIndex(string name, Type type)
-        {
-            if (type == typeof(NoIndexing))
-                return new NoIndex();
-
-            if (type == typeof(FullTextString))
-                return new FullTextIndex(_Path, name, false, true);
-
-            else if (type == typeof(string))
-            {
-                byte len = Global.DefaultStringKeySize;
-                if (_idxlen.TryGetValue(name, out len) == false)
-                    len = Global.DefaultStringKeySize;
-                return new TypeIndexes<string>(_Path, name, len);
-            }
-
-            else if (type == typeof(bool) || type == typeof(bool?))
-                return new BoolIndex(_Path, name , ".idx");
-
-            else if (type.IsEnum)
-                return (IIndex)Activator.CreateInstance(
-                    typeof(EnumIndex<>).MakeGenericType(type),
-                    new object[] { _Path, name });
-
-            else
-                return (IIndex)Activator.CreateInstance(
-                    typeof(TypeIndexes<>).MakeGenericType(type),
-                    new object[] { _Path, name, Global.DefaultStringKeySize });
-        }
 
         private void DeleteRowsWith(Guid guid)
         {
@@ -1034,26 +718,39 @@ namespace RaptorDB.Views
 
         private WAHBitArray QueryColumnExpression(string colname, RDBExpression exp, object from)
         {
-            int i = 0;
-            if (_nocase.TryGetValue(colname, out i)) // no case query
-                return _indexes[colname].Query(exp, ("" + from).ToLowerInvariant(), _viewData.Count());
-            else
-                return _indexes[colname].Query(exp, from, _viewData.Count());
+            return _indexes[colname].Query(exp, from, _viewData.Count());
         }
+
+        SafeDictionary<string, Expression<Predicate<TSchema>>> _lambdacache = new SafeDictionary<string, Expression<Predicate<TSchema>>>();
+        private Expression<Predicate<TSchema>> ParseFilter(string filter)
+        {
+            if (filter == null) return null;
+            filter = filter.Trim();
+            if (filter.Length == 0) return null;
+            Expression<Predicate<TSchema>> le = null;
+            if (_lambdacache.TryGetValue(filter, out le) == false)
+            {
+                le = System.Linq.Dynamic.DynamicExpression.ParseLambda<Predicate<TSchema>>(_view.Schema, typeof(bool), filter, null);
+                _lambdacache.Add(filter, le);
+            }
+            return le;
+        }
+
         #endregion
 
-        internal int Count<T>(Expression<Predicate<T>> filter)
+        #region Count
+        public int Count(Expression<Predicate<TSchema>> filter)
         {
             int totcount = 0;
             DateTime dt = FastDateTime.Now;
             if (filter == null)
-                totcount = internalCount();
+                totcount = TotalCount();
             else
             {
                 WAHBitArray ba = new WAHBitArray();
 
                 QueryVisitor qv = new QueryVisitor(QueryColumnExpression);
-                qv.Visit(filter);
+                qv.Visit(filter.Body);
                 var delbits = _deletedRows.GetBits();
                 ba = ((WAHBitArray)qv._bitmap.Pop()).AndNot(delbits);
 
@@ -1064,156 +761,37 @@ namespace RaptorDB.Views
             return totcount;
         }
 
-        internal int Count(string filter)
+        public int Count(string filter)
         {
-            int totcount = 0;
-            DateTime dt = FastDateTime.Now;
-            filter = filter.Trim();
-            if (filter == null || filter == "")
-                totcount = internalCount();
-            else
-            {
-                _log.Debug("Count filter : " + filter);
-                WAHBitArray ba = new WAHBitArray();
-
-                LambdaExpression le = null;
-                if (_lambdacache.TryGetValue(filter, out le) == false)
-                {
-                    le = System.Linq.Dynamic.DynamicExpression.ParseLambda(_view.Schema, typeof(bool), filter, null);
-                    _lambdacache.Add(filter, le);
-                }
-                QueryVisitor qv = new QueryVisitor(QueryColumnExpression);
-                qv.Visit(le.Body);
-                var delbits = _deletedRows.GetBits();
-                ba = ((WAHBitArray)qv._bitmap.Pop()).AndNot(delbits);
-
-                totcount = (int)ba.CountOnes();
-            }
-            _log.Debug("Count items = " + totcount);
-            _log.Debug("Count time (ms) : " + FastDateTime.Now.Subtract(dt).TotalMilliseconds);
-            return totcount;
+            return Count(ParseFilter(filter));
         }
 
-        private int internalCount()
+        public int TotalCount()
         {
             int c = _viewData.Count();
             int cc = (int)_deletedRows.GetBits().CountOnes();
             return c - cc;
         }
-
-        internal Result<T> Query2<T>(Expression<Predicate<T>> filter, int start, int count)
-        {
-            return Query2<T>(filter, start, count, "");
-        }
-
-        internal Result<T> Query2<T>(Expression<Predicate<T>> filter, int start, int count, string orderby)
-        {
-            DateTime dt = FastDateTime.Now;
-            _log.Debug("query : " + _view.Name);
-
-            WAHBitArray ba = new WAHBitArray();
-
-            QueryVisitor qv = new QueryVisitor(QueryColumnExpression);
-            qv.Visit(filter);
-            var delbits = _deletedRows.GetBits();
-            if (qv._bitmap.Count > 0)
-            {
-                WAHBitArray qbits = (WAHBitArray)qv._bitmap.Pop();
-                ba = qbits.AndNot(delbits);
-            }
-            List<T> trows = null;
-            if (_viewmanager.inTransaction())
-            {
-                // query from transactions own data
-                tran_data data = null;
-                if (_transactions.TryGetValue(Thread.CurrentThread.ManagedThreadId, out data))
-                {
-                    List<T> rrows = new List<T>();
-                    foreach (var kv in data.rows)
-                    {
-                        foreach (var r in kv.Value)
-                        {
-                            object o = FastCreateObject(_view.Schema);
-                            rrows.Add((T)_rowfiller(o, r));
-                        }
-                    }
-                    trows = rrows.FindAll(filter.Compile());
-                }
-            }
-            var order = SortBy(orderby);
-            bool desc = false;
-            if (orderby.ToLower().Contains(" desc"))
-                desc = true;
-            _log.Debug("query bitmap done (ms) : " + FastDateTime.Now.Subtract(dt).TotalMilliseconds);
-            dt = FastDateTime.Now;
-            // exec query return rows
-            return ReturnRows2<T>(ba, trows, start, count, order, desc);
-        }
-
-        internal Result<T> Query2<T>(string filter, int start, int count)
-        {
-            return Query2<T>(filter, start, count, "");
-        }
-
-        internal Result<T> Query2<T>(string filter, int start, int count, string orderby)
-        {
-            DateTime dt = FastDateTime.Now;
-            _log.Debug("query : " + _view.Name);
-            _log.Debug("query : " + filter);
-            _log.Debug("order by : " + orderby);
-
-            WAHBitArray ba = new WAHBitArray();
-            var delbits = _deletedRows.GetBits();
-
-            if (filter != "")
-            {
-                LambdaExpression le = null;
-                if (_lambdacache.TryGetValue(filter, out le) == false)
-                {
-                    le = System.Linq.Dynamic.DynamicExpression.ParseLambda(_view.Schema, typeof(bool), filter, null);
-                    _lambdacache.Add(filter, le);
-                }
-                QueryVisitor qv = new QueryVisitor(QueryColumnExpression);
-                qv.Visit(le.Body);
-
-                ba = ((WAHBitArray)qv._bitmap.Pop()).AndNot(delbits);
-            }
-            else
-                ba = WAHBitArray.Fill(_viewData.Count()).AndNot(delbits);
-
-            var order = SortBy(orderby);
-            bool desc = false;
-            if (orderby.ToLower().Contains(" desc"))
-                desc = true;
-            _log.Debug("query bitmap done (ms) : " + FastDateTime.Now.Subtract(dt).TotalMilliseconds);
-            dt = FastDateTime.Now;
-            // exec query return rows
-            return ReturnRows2<T>(ba, null, start, count, order, desc);
-        }
+        #endregion
 
         private SafeDictionary<string, List<int>> _sortcache = new SafeDictionary<string, List<int>>();
 
-        internal List<int> SortBy(string sortcol)
+        private List<int> SortBy(string sortcol)
         {
-            List<int> sortlist = new List<int>();
-            if (sortcol == "")
-                return sortlist;
-            string col = "";
-            foreach (var c in _schema.Columns)
-                if (sortcol.ToLower().Contains(c.Key.ToLower()))
-                {
-                    col = c.Key;
-                    break;
-                }
-            if (col == "")
+            if (string.IsNullOrEmpty(sortcol))
+                return null;
+
+            string col = _colnames.FirstOrDefault(c => sortcol.StartsWith(sortcol, StringComparison.InvariantCultureIgnoreCase));
+            if (col == null)
             {
                 _log.Debug("sort column not recognized : " + sortcol);
-                return sortlist;
+                return null;
             }
 
             DateTime dt = FastDateTime.Now;
 
-            if (_sortcache.TryGetValue(col, out sortlist) == false)
+            List<int> sortlist;
+            if (!_sortcache.TryGetValue(col, out sortlist))
             {
                 sortlist = new List<int>();
                 int count = _viewData.Count();
@@ -1233,12 +811,6 @@ namespace RaptorDB.Views
             return sortlist;
         }
 
-        internal object GetAssembly(out string typename)
-        {
-            typename = _view.Schema.AssemblyQualifiedName;
-            return File.ReadAllBytes(_view.Schema.Assembly.Location);
-        }
-
         public ViewRowDefinition GetSchema()
         {
             return _schema;
@@ -1246,23 +818,29 @@ namespace RaptorDB.Views
 
         int _lastrownumber = -1;
         object _rowlock = new object();
-        internal int NextRowNumber()
+        public int NextRowNumber()
         {
+            // TODO: interlocked
             lock (_rowlock)
             {
                 if (_lastrownumber == -1)
-                    _lastrownumber = internalCount();
+                    _lastrownumber = TotalCount();
                 return ++_lastrownumber;
             }
         }
 
-        internal int ViewDelete<T>(Expression<Predicate<T>> filter)
+        /// <summary>
+        /// marks matching items as removed
+        /// </summary>
+        /// <returns>Count of removed items</returns>
+        public int ViewDelete(Expression<Predicate<TSchema>> filter)
         {
+            if (filter == null) return 0;
             _log.Debug("delete : " + _view.Name);
             if (_isDirty == false)
                 WriteDirtyFile();
             QueryVisitor qv = new QueryVisitor(QueryColumnExpression);
-            qv.Visit(filter);
+            qv.Visit(filter.Body);
             var delbits = _deletedRows.GetBits();
             int count = qv._bitmap.Count;
             if (count > 0)
@@ -1276,6 +854,14 @@ namespace RaptorDB.Views
             InvalidateSortCache();
             return count;
         }
+        /// <summary>
+        /// marks matching items as removed
+        /// </summary>
+        /// <returns>Count of removed items</returns>
+        public int ViewDelete(string filter)
+        {
+            return ViewDelete(ParseFilter(filter));
+        }
 
         private object _dfile = new object();
         private void WriteDirtyFile()
@@ -1288,41 +874,13 @@ namespace RaptorDB.Views
             }
         }
 
-        internal int ViewDelete(string filter)
-        {
-            _log.Debug("delete : " + _view.Name);
-            if (_isDirty == false)
-                WriteDirtyFile();
-            int count = 0;
-            if (filter != "")
-            {
-                LambdaExpression le = null;
-                if (_lambdacache.TryGetValue(filter, out le) == false)
-                {
-                    le = System.Linq.Dynamic.DynamicExpression.ParseLambda(_view.Schema, typeof(bool), filter, null);
-                    _lambdacache.Add(filter, le);
-                }
-                QueryVisitor qv = new QueryVisitor(QueryColumnExpression);
-                qv.Visit(le.Body);
-                count = qv._bitmap.Count;
-                if (count > 0)
-                {
-                    WAHBitArray qbits = (WAHBitArray)qv._bitmap.Pop();
-                    _deletedRows.InPlaceOR(qbits);
-                    count = (int)qbits.CountOnes();
-                }
-            }
 
-            InvalidateSortCache();
-            return count;
-        }
-
-        internal bool ViewInsert(Guid id, object row)
+        public bool ViewInsert(Guid id, object row)
         {
             List<object> l = new List<object>();
             l.Add(row);
 
-            var r = ExtractRows(l);
+            var r = ViewSchemaHelper.ExtractRows(l, _colnames);
             InsertRowsWithIndexUpdate(id, r);
 
             InvalidateSortCache();

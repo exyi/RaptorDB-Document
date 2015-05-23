@@ -256,7 +256,7 @@ namespace RaptorDB.Common
             return Encoding.UTF8.GetBytes(s);
         }
 
-        public static string GetString(byte[] buffer, int index, short length)
+        public static string GetString(byte[] buffer, int index, int length)
         {
             return Encoding.UTF8.GetString(buffer, index, length);
         }
