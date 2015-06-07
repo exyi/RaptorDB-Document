@@ -12,7 +12,7 @@ namespace RaptorDB.Common
 
         public SafeDictionary(int capacity)
         {
-            _Dictionary = new Dictionary<TKey, TValue>(capacity);
+        	_Dictionary = new Dictionary<TKey, TValue>(capacity);
         }
 
         public SafeDictionary()
@@ -256,7 +256,7 @@ namespace RaptorDB.Common
             return Encoding.UTF8.GetBytes(s);
         }
 
-        public static string GetString(byte[] buffer, int index, short length)
+        public static string GetString(byte[] buffer, int index, int length)
         {
             return Encoding.UTF8.GetString(buffer, index, length);
         }

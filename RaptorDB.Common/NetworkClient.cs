@@ -77,7 +77,6 @@ namespace RaptorDB.Common
         private void CheckConnection()
         {
             // check connected state before sending
-
             if (_client == null || !_client.Connected)
                 Connect();
         }

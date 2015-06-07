@@ -61,13 +61,13 @@ namespace RaptorDB
     /// Index file max string length size in UTF8 (Default = 60)
     /// </summary>
     [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]
-    public class StringIndexLength : Attribute
+    public class StringIndexLengthAttribute : Attribute
     {
-        public StringIndexLength()
+        public StringIndexLengthAttribute()
         {
             Length = 60; // default
         }
-        public StringIndexLength(byte length)
+        public StringIndexLengthAttribute(byte length)
         {
             Length = length;
         }

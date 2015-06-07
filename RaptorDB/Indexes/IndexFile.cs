@@ -20,7 +20,7 @@ namespace RaptorDB
             0,0,0,0          // 11 = last record number indexed 
             };
 
-        private byte[] _BlockHeader = new byte[] { 
+        private static readonly byte[] _BlockHeader = new byte[] { 
             (byte)'P',(byte)'A',(byte)'G',(byte)'E',
             0,               // 4 = [Flag] = 0=page 1=page list   
             0,0,             // 5 = [item count] 
@@ -63,7 +63,7 @@ namespace RaptorDB
                 // if file exists open and read header
                 _file = File.Open(filename, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
                 ReadFileHeader();
-                if (_externalStrings == false)// if the file says different
+                if (!_externalStrings)// if the file says different
                 {
                     _rowSize = (_maxKeySize + 1 + 4 + 4);
                 }
@@ -178,7 +178,7 @@ namespace RaptorDB
 
         public int GetNewPageNumber()
         {
-            return Interlocked.Increment(ref _LastPageNumber); //_LastPageNumber++;
+            return Interlocked.Increment(ref _LastPageNumber);
         }
 
         private void SeekPage(int pnum)
@@ -231,7 +231,7 @@ namespace RaptorDB
 
         #region [  P a g e s ]
 
-        public void GetPageList(List<int> PageListDiskPages, SafeSortedList<T, PageInfo> PageList, out int lastIndexedRow)
+        public void GetPageList(List<int> PageListDiskPages, IDictionary<T, PageInfo> PageList, out int lastIndexedRow)
         {
             lastIndexedRow = Helper.ToInt32(_FileHeader, 11);
             // load page list
@@ -246,7 +246,7 @@ namespace RaptorDB
             }
         }
 
-        private int LoadPageListData(int page, SafeSortedList<T, PageInfo> PageList)
+        private int LoadPageListData(int page, IDictionary<T, PageInfo> PageList)
         {
             lock (_fileLock)
             {
@@ -395,7 +395,7 @@ namespace RaptorDB
         }
         #endregion
 
-        internal void SavePageList(SafeSortedList<T, PageInfo> _pages, List<int> diskpages)
+        internal void SavePageList(SortedList<T, PageInfo> _pages, List<int> diskpages)
         {
             lock (_fileLock)
             {
@@ -432,11 +432,11 @@ namespace RaptorDB
             }
         }
 
-        private void CreatePageListData(SafeSortedList<T, PageInfo> _pages, int offset, int index, int counter, byte[] page)
+        private void CreatePageListData(SortedList<T, PageInfo> _pages, int offset, int index, int counter, byte[] page)
         {
             int idx = index + _rowSize * counter;
             // key bytes
-            byte[] kk = _T.GetBytes(_pages.GetKey(counter + offset));
+            byte[] kk = _T.GetBytes(_pages.Keys[counter + offset]);
             byte size = (byte)kk.Length;
             if (size > _maxKeySize)
                 size = _maxKeySize;
@@ -444,10 +444,10 @@ namespace RaptorDB
             page[idx] = size;
             Buffer.BlockCopy(kk, 0, page, idx + 1, page[idx]);
             // offset = 4 bytes
-            byte[] b = Helper.GetBytes(_pages.GetValue(offset + counter).PageNumber, false);
+            byte[] b = Helper.GetBytes(_pages.Values[offset + counter].PageNumber, false);
             Buffer.BlockCopy(b, 0, page, idx + 1 + _maxKeySize, b.Length);
             // add counts 
-            b = Helper.GetBytes(_pages.GetValue(offset + counter).UniqueCount, false);
+            b = Helper.GetBytes(_pages.Values[offset + counter].UniqueCount, false);
             Buffer.BlockCopy(b, 0, page, idx + 1 + _maxKeySize + 4, b.Length);
             // FEATURE : add dup counts
         }

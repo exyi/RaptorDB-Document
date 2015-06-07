@@ -8,7 +8,7 @@ using System.Collections;
 
 namespace RaptorDB
 {
-    internal class BitmapIndex
+    public class BitmapIndex
     {
         public BitmapIndex(string path, string filename)
         {
@@ -33,9 +33,8 @@ namespace RaptorDB
                 _sc.Done();
             }
         }
-
-        private string _recExt = ".mgbmr";
-        private string _bmpExt = ".mgbmp";
+        private readonly string _recExt = ".mgbmr";
+        private readonly string _bmpExt = ".mgbmp";
         private string _FileName = "";
         private string _Path = "";
         private FileStream _bitmapFileWriteOrg;
@@ -48,10 +47,9 @@ namespace RaptorDB
         private int _lastRecordNumber = 0;
         private SafeDictionary<int, WAHBitArray> _cache = new SafeDictionary<int, WAHBitArray>();
         private SafeDictionary<int, long> _offsetCache = new SafeDictionary<int, long>();
-        private ILog log = LogManager.GetLogger(typeof(BitmapIndex));
+        private readonly ILog log = LogManager.GetLogger(typeof(BitmapIndex));
         private bool _optimizing = false;
         private bool _shutdownDone = false;
-        //private Queue _que = new Queue();
         private int _workingCount = 0;
 
         #region [  P U B L I C  ]
@@ -85,13 +83,21 @@ namespace RaptorDB
 
                 foreach (int k in keys)
                 {
-                    var bmp = _cache[k];
+                    WAHBitArray bmp;
+
+                    if (_cache.TryGetValue(k, out bmp))
+                    {
                     if (bmp.isDirty)
                     {
                         SaveBitmap(k, bmp);
                         bmp.FreeMemory();
                         bmp.isDirty = false;
                     }
+                }
+                    else
+                    {
+
+                }
                 }
                 Flush();
                 if (freeMemory)
@@ -115,6 +121,8 @@ namespace RaptorDB
 
         public WAHBitArray GetBitmap(int recno)
         {
+        	WAHBitArray ba;
+        	if(this._cache.TryGetValue(recno, out ba)) return ba;
             using (new L(this))
             {
                 return internalGetBitmap(recno);
@@ -388,22 +396,15 @@ namespace RaptorDB
             return bc;
         }
 
-//#pragma warning disable 642
         private void CheckInternalOP()
         {
             if (_optimizing)
               lock (_oplock) { } // yes! this is good
-            //lock (_que)
-            //    _que.Enqueue(1);
             Interlocked.Increment(ref _workingCount);
         }
-//#pragma warning restore 642
 
         private void Done()
         {
-            //lock (_que)
-            //    if (_que.Count > 0)
-            //        _que.Dequeue();
             Interlocked.Decrement(ref _workingCount);
         }
         #endregion

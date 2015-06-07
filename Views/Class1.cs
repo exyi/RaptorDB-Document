@@ -48,7 +48,7 @@ namespace SampleViews
         //[FullText]
         public string CustomerName;
         [CaseInsensitive]
-        [StringIndexLength(255)]
+        [StringIndexLengthAttribute(255)]
         public string NoCase;
         public DateTime Date;
         public string Address;

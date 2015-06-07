@@ -7,6 +7,7 @@ using System.Reflection;
 using System.IO;
 using System.Threading.Tasks;
 using System.Threading;
+using System.Linq.Expressions;
 
 namespace RaptorDB
 {
@@ -19,7 +20,7 @@ namespace RaptorDB
             _path = Directory.GetCurrentDirectory();
             AppDomain.CurrentDomain.AssemblyResolve += new ResolveEventHandler(CurrentDomain_AssemblyResolve);
             _server = new NetworkServer();
-
+            
             if (_S == "/")// unix system
                 _datapath = DataPath.Replace("\\", "/");
             else
@@ -27,7 +28,7 @@ namespace RaptorDB
 
             if (_datapath.EndsWith(_S) == false)
                 _datapath += _S;
-
+            
             _raptor = RaptorDB.Open(DataPath);
             register = _raptor.GetType().GetMethod("RegisterView", BindingFlags.Instance | BindingFlags.Public);
             save = _raptor.GetType().GetMethod("Save", BindingFlags.Instance | BindingFlags.Public);
@@ -45,7 +46,7 @@ namespace RaptorDB
         private MethodInfo register = null;
         private MethodInfo save = null;
         private SafeDictionary<Type, MethodInfo> _savecache = new SafeDictionary<Type, MethodInfo>();
-        private SafeDictionary<string, ServerSideFunc> _ssidecache = new SafeDictionary<string, ServerSideFunc>();
+        private SafeDictionary<string, ServerSideFuncInfo> _ssidecache = new SafeDictionary<string, ServerSideFuncInfo>();
         private Dictionary<string, Handler> _handlers = new Dictionary<string, Handler>();
         private const string _RaptorDB_users_config = "RaptorDB-Users.config";
 
@@ -120,117 +121,117 @@ namespace RaptorDB
         }
 
         private void InitializeCommandsDictionary()
-        {
+                {
             _handlers.Add("" + COMMANDS.Save,
                 (p, ret) =>
                 {
-                    var m = GetSave(p.Data.GetType());
+                        var m = GetSave(p.Data.GetType());
                     ret.OK = true;
-                    m.Invoke(_raptor, new object[] { p.Docid, p.Data });
+                        m.Invoke(_raptor, new object[] { p.Docid, p.Data });
                 });
 
             _handlers.Add("" + COMMANDS.SaveBytes,
                 (p, ret) =>
                 {
-                    ret.OK = _raptor.SaveBytes(p.Docid, (byte[])p.Data);
+                        ret.OK = _raptor.SaveBytes(p.Docid, (byte[])p.Data);
                 });
 
             _handlers.Add("" + COMMANDS.QueryType,
                 (p, ret) =>
                 {
                     var param = (object[])p.Data;
-                    Type t = Type.GetType((string)param[0]);
-                    string viewname = _raptor.GetViewName(t);
-                    ret.OK = true;
-                    ret.Data = _raptor.Query(viewname, (string)param[1], p.Start, p.Count, p.OrderBy);
+                        Type t = Type.GetType((string)param[0]);
+                        string viewname = _raptor.GetViewName(t);
+                        ret.OK = true;
+                        ret.Data = _raptor.Query(viewname, (string)param[1], p.Start, p.Count, p.OrderBy);
                 });
 
             _handlers.Add("" + COMMANDS.QueryStr,
                 (p, ret) =>
                 {
-                    ret.OK = true;
-                    ret.Data = _raptor.Query(p.Viewname, (string)p.Data, p.Start, p.Count, p.OrderBy);
+                        ret.OK = true;
+                        ret.Data = _raptor.Query(p.Viewname, (string)p.Data, p.Start, p.Count, p.OrderBy);
                 });
 
             _handlers.Add("" + COMMANDS.Fetch,
                 (p, ret) =>
                 {
-                    ret.OK = true;
-                    ret.Data = _raptor.Fetch(p.Docid);
+                        ret.OK = true;
+                        ret.Data = _raptor.Fetch(p.Docid);
                 });
 
             _handlers.Add("" + COMMANDS.FetchBytes,
                 (p, ret) =>
                 {
-                    ret.OK = true;
-                    ret.Data = _raptor.FetchBytes(p.Docid);
+                        ret.OK = true;
+                        ret.Data = _raptor.FetchBytes(p.Docid);
                 });
 
             _handlers.Add("" + COMMANDS.Backup,
                 (p, ret) =>
                 {
-                    ret.OK = _raptor.Backup();
+                        ret.OK = _raptor.Backup();
                 });
 
             _handlers.Add("" + COMMANDS.Delete,
                 (p, ret) =>
                 {
-                    ret.OK = _raptor.Delete(p.Docid);
+                        ret.OK = _raptor.Delete(p.Docid);
                 });
 
             _handlers.Add("" + COMMANDS.DeleteBytes,
                 (p, ret) =>
                 {
-                    ret.OK = _raptor.DeleteBytes(p.Docid);
+                        ret.OK = _raptor.DeleteBytes(p.Docid);
                 });
 
             _handlers.Add("" + COMMANDS.Restore,
                 (p, ret) =>
                 {
-                    ret.OK = true;
-                    Task.Factory.StartNew(() => _raptor.Restore());
+                        ret.OK = true;
+                        Task.Factory.StartNew(() => _raptor.Restore());
                 });
 
             _handlers.Add("" + COMMANDS.AddUser,
                 (p, ret) =>
                 {
                     var param = (object[])p.Data;
-                    ret.OK = AddUser((string)param[0], (string)param[1], (string)param[2]);
+                        ret.OK = AddUser((string)param[0], (string)param[1], (string)param[2]);
                 });
 
             _handlers.Add("" + COMMANDS.ServerSide,
                 (p, ret) =>
                 {
                     var param = (object[])p.Data;
-                    ret.OK = true;
-                    ret.Data = _raptor.ServerSide(GetServerSideFuncCache(param[0].ToString(), param[1].ToString()), param[2].ToString());
+                        ret.OK = true;
+                    ret.Data = _raptor.ServerSide(GetServerSideFuncCache(param[0].ToString(), param[1].ToString()).GetFunc(2), param[3].ToString());
                 });
 
             _handlers.Add("" + COMMANDS.FullText,
                 (p, ret) =>
                 {
                     var param = (object[])p.Data;
-                    ret.OK = true;
-                    ret.Data = _raptor.FullTextSearch("" + param[0]);
+                        ret.OK = true;
+                        ret.Data = _raptor.FullTextSearch("" + param[0]);
                 });
 
             _handlers.Add("" + COMMANDS.CountType,
                 (p, ret) =>
                 {
-                    // count type
+                        // count type
                     var param = (object[])p.Data;
                     Type t = Type.GetType((string)param[0]);
                     string viewname2 = _raptor.GetViewName(t);
-                    ret.OK = true;
-                    ret.Data = _raptor.Count(viewname2, (string)param[1]);
+                        ret.OK = true;
+                        ret.Data = _raptor.Count(viewname2, (string)param[1]);
                 });
 
             _handlers.Add("" + COMMANDS.CountStr,
                 (p, ret) =>
                 {
-                    // count str
-                    ret.OK = true;
-                    ret.Data = _raptor.Count(p.Viewname, (string)p.Data);
+                        // count str
+                        ret.OK = true;
+                        ret.Data = _raptor.Count(p.Viewname, (string)p.Data);
                 });
 
             _handlers.Add("" + COMMANDS.GCount,
@@ -238,163 +239,187 @@ namespace RaptorDB
                 {
                     Type t = Type.GetType(p.Viewname);
                     string viewname3 = _raptor.GetViewName(t);
-                    ret.OK = true;
-                    ret.Data = _raptor.Count(viewname3, (string)p.Data);
+                        ret.OK = true;
+                        ret.Data = _raptor.Count(viewname3, (string)p.Data);
                 });
 
             _handlers.Add("" + COMMANDS.DocHistory,
                 (p, ret) =>
                 {
-                    ret.OK = true;
-                    ret.Data = _raptor.FetchHistory(p.Docid);
+                        ret.OK = true;
+                        ret.Data = _raptor.FetchHistory(p.Docid);
                 });
 
             _handlers.Add("" + COMMANDS.FileHistory,
                 (p, ret) =>
                 {
-                    ret.OK = true;
-                    ret.Data = _raptor.FetchBytesHistory(p.Docid);
+                        ret.OK = true;
+                        ret.Data = _raptor.FetchBytesHistory(p.Docid);
                 });
 
             _handlers.Add("" + COMMANDS.FetchVersion,
                 (p, ret) =>
                 {
-                    ret.OK = true;
-                    ret.Data = _raptor.FetchVersion((int)p.Data);
+                        ret.OK = true;
+                        ret.Data = _raptor.FetchVersion((int)p.Data);
                 });
 
             _handlers.Add("" + COMMANDS.FetchFileVersion,
                 (p, ret) =>
                 {
-                    ret.OK = true;
-                    ret.Data = _raptor.FetchBytesVersion((int)p.Data);
+                        ret.OK = true;
+                        ret.Data = _raptor.FetchBytesVersion((int)p.Data);
                 });
 
             _handlers.Add("" + COMMANDS.CheckAssembly,
                 (p, ret) =>
                 {
-                    ret.OK = true;
-                    string typ = "";
-                    ret.Data = _raptor.GetAssemblyForView(p.Viewname, out typ);
-                    ret.Error = typ;
+                        ret.OK = true;
+                        string typ = "";
+                        ret.Data = _raptor.GetAssemblyForView(p.Viewname, out typ);
+                        ret.Error = typ;
                 });
             _handlers.Add("" +COMMANDS.FetchHistoryInfo,
                 (p, ret) =>
                 {
-                    ret.OK = true;
-                    ret.Data = _raptor.FetchHistoryInfo(p.Docid);
+                        ret.OK = true;
+                        ret.Data = _raptor.FetchHistoryInfo(p.Docid);
                 });
 
             _handlers.Add("" + COMMANDS.FetchByteHistoryInfo,
                 (p, ret) =>
                 {
-                    ret.OK = true;
-                    ret.Data = _raptor.FetchBytesHistoryInfo(p.Docid);
+                        ret.OK = true;
+                        ret.Data = _raptor.FetchBytesHistoryInfo(p.Docid);
                 });
 
             _handlers.Add("" + COMMANDS.ViewDelete,
                 (p, ret) =>
                 {
-                    ret.OK = true;
+                        ret.OK = true;
                     var param = (object[])p.Data;
-                    ret.Data = _raptor.ViewDelete((string)param[0], (string)param[1]);
+                        ret.Data = _raptor.ViewDelete((string)param[0], (string)param[1]);
                 });
 
             _handlers.Add("" +COMMANDS.ViewDelete_t,
                 (p, ret) =>
                 {
-                    ret.OK = true;
+                        ret.OK = true;
                     var param = (object[])p.Data;
                     Type t = Type.GetType((string)param[0]);
                     string viewname4 = _raptor.GetViewName(t);
-                    ret.Data = _raptor.ViewDelete(viewname4, (string)param[1]);
+                        ret.Data = _raptor.ViewDelete(viewname4, (string)param[1]);
                 });
 
             _handlers.Add("" +COMMANDS.ViewInsert,
                 (p, ret) =>
                 {
-                    ret.OK = true;
+                        ret.OK = true;
                     var param = (object[])p.Data;
-                    ret.Data = _raptor.ViewInsert((string)param[0], p.Docid, param[1]);
+                        ret.Data = _raptor.ViewInsert((string)param[0], p.Docid, param[1]);
                 });
 
             _handlers.Add("" + COMMANDS.ViewInsert_t,
                 (p, ret) =>
                 {
-                    ret.OK = true;
+                        ret.OK = true;
                     var param = (object[])p.Data;
                     Type t = Type.GetType((string)param[0]);
                     string viewname5 = _raptor.GetViewName(t);
-                    ret.Data = _raptor.ViewInsert(viewname5, p.Docid, param[1]);
+                        ret.Data = _raptor.ViewInsert(viewname5, p.Docid, param[1]);
                 });
 
             _handlers.Add("" + COMMANDS.DocCount,
                 (p, ret) =>
                 {
-                    ret.OK = true;
-                    ret.Data = _raptor.DocumentCount();
+                        ret.OK = true;
+                        ret.Data = _raptor.DocumentCount();
                 });
 
             _handlers.Add("" +COMMANDS.GetObjectHF,
                 (p, ret) =>
                 {
-                    ret.OK = true;
-                    ret.Data = _raptor.GetKVHF().GetObjectHF((string)p.Data);
+                        ret.OK = true;
+                        ret.Data = _raptor.GetKVHF().GetObjectHF((string)p.Data);
                 });
 
             _handlers.Add("" + COMMANDS.SetObjectHF,
                 (p, ret) =>
                 {
-                    ret.OK = true;
+                        ret.OK = true;
                     var param = (object[])p.Data;
-                    _raptor.GetKVHF().SetObjectHF((string)param[0], param[1]);
+                        _raptor.GetKVHF().SetObjectHF((string)param[0], param[1]);
                 });
 
             _handlers.Add("" + COMMANDS.DeleteKeyHF,
                 (p, ret) =>
                 {
-                    ret.OK = true;
-                    ret.Data = _raptor.GetKVHF().DeleteKeyHF((string)p.Data);
+                        ret.OK = true;
+                        ret.Data = _raptor.GetKVHF().DeleteKeyHF((string)p.Data);
                 });
 
             _handlers.Add("" +COMMANDS.CountHF,
                 (p, ret) =>
                 {
-                    ret.OK = true;
-                    ret.Data = _raptor.GetKVHF().CountHF();
+                        ret.OK = true;
+                        ret.Data = _raptor.GetKVHF().CountHF();
                 });
 
             _handlers.Add("" + COMMANDS.ContainsHF,
                 (p, ret) =>
                 {
-                    ret.OK = true;
-                    ret.Data = _raptor.GetKVHF().ContainsHF((string)p.Data);
+                        ret.OK = true;
+                        ret.Data = _raptor.GetKVHF().ContainsHF((string)p.Data);
                 });
 
             _handlers.Add("" + COMMANDS.GetKeysHF,
                 (p, ret) =>
                 {
-                    ret.OK = true;
-                    ret.Data = _raptor.GetKVHF().GetKeysHF();
+                        ret.OK = true;
+                        ret.Data = _raptor.GetKVHF().GetKeysHF();
                 });
 
             _handlers.Add("" + COMMANDS.CompactStorageHF,
                 (p, ret) =>
                 {
-                    ret.OK = true;
-                    _raptor.GetKVHF().CompactStorageHF();
+                        ret.OK = true;
+                        _raptor.GetKVHF().CompactStorageHF();
                 });
         }
 
-        private ServerSideFunc GetServerSideFuncCache(string type, string method)
+        public delegate List<object> ServerSideFuncAnonymous(object target, IRaptorDB rap, string filter);
+        public class ServerSideFuncInfo
         {
-            ServerSideFunc func;
+            public ServerSideFunc StaticFunc { get; set; }
+            public ServerSideFuncAnonymous InstanceFunc { get; set; }
+
+            public ServerSideFunc GetFunc(object target = null)
+            {
+                return StaticFunc ?? ((rap, filter) => InstanceFunc(target, rap, filter));
+            }
+        }
+        private ServerSideFuncInfo GetServerSideFuncCache(string type, string method)
+        {
+            ServerSideFuncInfo func;
             _log.Debug("Calling Server side Function : " + method + " on type " + type);
             if (_ssidecache.TryGetValue(type + method, out func) == false)
             {
+                func = new ServerSideFuncInfo();
                 Type tt = Type.GetType(type);
-
-                func = (ServerSideFunc)Delegate.CreateDelegate(typeof(ServerSideFunc), tt, method);
+                var methodInfo = Type.GetType(type).GetMethod(method, new[] { typeof(IRaptorDB), typeof(string) });
+                if (!methodInfo.IsStatic)
+                {
+                    var targetParEx = Expression.Parameter(typeof(object), "target");
+                    var rapParEx = Expression.Parameter(typeof(IRaptorDB), "rap");
+                    var filterParEx = Expression.Parameter(typeof(string), "filter");
+                    var callEx = Expression.Call(Expression.Convert(targetParEx, methodInfo.DeclaringType), methodInfo, rapParEx, filterParEx);
+                    func.InstanceFunc = Expression.Lambda<ServerSideFuncAnonymous>(callEx, targetParEx, rapParEx, filterParEx).Compile();
+                }
+                else
+                {
+                    var coreF = func.StaticFunc = (ServerSideFunc)Delegate.CreateDelegate(typeof(ServerSideFunc), methodInfo);
+                    func.InstanceFunc = (t, r, f) => coreF(r, f);
+                }
                 _ssidecache.Add(type + method, func);
             }
             return func;

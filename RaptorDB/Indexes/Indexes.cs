@@ -4,14 +4,20 @@ using System.Linq;
 using System.Text;
 using System.IO;
 using RaptorDB.Common;
+using System.Runtime.InteropServices;
 
 namespace RaptorDB
 {
     #region [  TypeIndexes  ]
-    internal class TypeIndexes<T> : MGIndex<T>, IIndex where T : IComparable<T>
+    public class TypeIndexes<T> : MGIndex<T>, IIndex where T : IComparable<T>
     {
-        public TypeIndexes(string path, string filename, byte keysize)
+    	public TypeIndexes(string path, string filename, byte keysize)
             : base(path, filename + ".mgidx", keysize, Global.PageItemCount, true)
+        {
+
+        }
+    	public TypeIndexes(string path, string filename, byte keysize, bool allowDups)
+            : base(path, filename + ".mgidx", keysize, Global.PageItemCount, allowDups)
         {
 
         }
@@ -81,13 +87,12 @@ namespace RaptorDB
     #endregion
 
     #region [  BoolIndex  ]
-    internal class BoolIndex : IIndex
+    public class BoolIndex : IIndex
     {
         public BoolIndex(string path, string filename, string extension)
         {
             // create file
             _filename = filename + extension;
-            //if (_filename.Contains(".") == false) _filename += ".deleted";
             _path = path;
             if (_path.EndsWith(Path.DirectorySeparatorChar.ToString()) == false)
                 _path += Path.DirectorySeparatorChar.ToString();
@@ -208,6 +213,68 @@ namespace RaptorDB
     }
     #endregion
 
+
+    internal class ObjectToStringIndex<T> : MGIndex<string>, IIndex
+    {
+        public ObjectToStringIndex(string path, string filename, byte maxLength)
+            : base(path, filename + ".mgidx", maxLength, Global.PageItemCount, true)
+        {
+        }
+
+        public void Set(object key, int recnum)
+        {
+            if (key == null) return;
+            base.Set(key.ToString(), recnum);
+        }
+
+        public WAHBitArray Query(RDBExpression ex, object from, int maxsize)
+        {
+            if (!typeof(T).Equals(from.GetType()))
+                from = Converter(from);
+
+            return base.Query(ex, from.ToString(), maxsize);
+        }
+
+        private T Converter(object from)
+        {
+            if (typeof(T) == typeof(Guid))
+            {
+                object o = new Guid(from.ToString());
+                return (T)o;
+            }
+            else
+                return (T)Convert.ChangeType(from, typeof(T));
+        }
+
+        void IIndex.FreeMemory()
+        {
+            base.FreeMemory();
+            base.SaveIndex();
+        }
+
+        void IIndex.Shutdown()
+        {
+            base.SaveIndex();
+            base.Shutdown();
+        }
+
+        public WAHBitArray Query(object fromkey, object tokey, int maxsize)
+        {
+            if (typeof(T).Equals(fromkey.GetType()) == false)
+                fromkey = Convert.ChangeType(fromkey, typeof(T));
+
+            if (typeof(T).Equals(tokey.GetType()) == false)
+                tokey = Convert.ChangeType(tokey, typeof(T));
+
+            return base.Query(fromkey.ToString(), tokey.ToString(), maxsize);
+        }
+
+        object[] IIndex.GetKeys()
+        {
+            return base.GetKeys();
+        }
+    }
+
     #region [  FullTextIndex  ]
     internal class FullTextIndex : Hoot, IIndex
     {
@@ -272,80 +339,6 @@ namespace RaptorDB
     }
     #endregion
 
-    #region [  EnumIndex  ]
-    internal class EnumIndex<T> : MGIndex<string>, IIndex //where T : IComparable<T>
-    {
-        public EnumIndex(string path, string filename)
-            : base(path, filename + ".mgidx", 30, Global.PageItemCount, true)
-        {
-
-        }
-
-        public void Set(object key, int recnum)
-        {
-            if (key == null) return; // FEATURE : index null values ??
-
-            base.Set(key.ToString(), recnum);
-        }
-
-        public WAHBitArray Query(RDBExpression ex, object from, int maxsize)
-        {
-            T f = default(T);
-            if (typeof(T).Equals(from.GetType()) == false)
-                f = Converter(from);
-            else
-                f = (T)from;
-
-            return base.Query(ex, f.ToString(), maxsize);
-        }
-
-        private T Converter(object from)
-        {
-            if (typeof(T) == typeof(Guid))
-            {
-                object o = new Guid(from.ToString());
-                return (T)o;
-            }
-            else
-                return (T)Convert.ChangeType(from, typeof(T));
-        }
-
-        void IIndex.FreeMemory()
-        {
-            base.FreeMemory();
-            base.SaveIndex();
-        }
-
-        void IIndex.Shutdown()
-        {
-            base.SaveIndex();
-            base.Shutdown();
-        }
-
-        public WAHBitArray Query(object fromkey, object tokey, int maxsize)
-        {
-            T f = default(T);
-            if (typeof(T).Equals(fromkey.GetType()) == false)
-                f = (T)Convert.ChangeType(fromkey, typeof(T));
-            else
-                f = (T)fromkey;
-
-            T t = default(T);
-            if (typeof(T).Equals(tokey.GetType()) == false)
-                t = (T)Convert.ChangeType(tokey, typeof(T));
-            else
-                t = (T)tokey;
-
-            return base.Query(f.ToString(), t.ToString(), maxsize);
-        }
-
-        object[] IIndex.GetKeys()
-        {
-            return base.GetKeys();
-        }
-    }
-    #endregion
-
     #region [  NoIndex  ]
     internal class NoIndex : IIndex
     {
@@ -379,6 +372,8 @@ namespace RaptorDB
         {
             return new object[] { };
         }
+
+        public static readonly NoIndex Instance = new NoIndex();
     }
     #endregion
 }

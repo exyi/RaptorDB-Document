@@ -7,7 +7,7 @@ using RaptorDB.Common;
 namespace RaptorDB
 {
     #region [   KeyStoreString   ]
-    internal class KeyStoreString : IDisposable
+    public class KeyStoreString : IDisposable
     {
         public KeyStoreString(string filename, bool caseSensitve)
         {

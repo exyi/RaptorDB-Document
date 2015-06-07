@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 2013
-VisualStudioVersion = 12.0.31101.0
+# Visual Studio 14
+VisualStudioVersion = 14.0.22823.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RaptorDB", "RaptorDB\RaptorDB.csproj", "{45F6BE30-989A-4749-B6A0-69099C8661F4}"
 EndProject
@@ -14,6 +14,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Views", "Views\Views.csproj", "{A1347486-8D54-4E17-8A22-76EFE61BF37B}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RaptorDBServer", "RaptorDBServer\RaptorDBServer.csproj", "{3EEB5C76-8216-4013-915D-94402BB320F6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "playground", "playground\playground.csproj", "{7B90D541-C37E-44D6-B344-35ECA59E9A14}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -85,6 +87,18 @@ Global
 		{3EEB5C76-8216-4013-915D-94402BB320F6}.Release|Mixed Platforms.ActiveCfg = Release|Any CPU
 		{3EEB5C76-8216-4013-915D-94402BB320F6}.Release|Mixed Platforms.Build.0 = Release|Any CPU
 		{3EEB5C76-8216-4013-915D-94402BB320F6}.Release|x86.ActiveCfg = Release|Any CPU
+		{7B90D541-C37E-44D6-B344-35ECA59E9A14}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7B90D541-C37E-44D6-B344-35ECA59E9A14}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7B90D541-C37E-44D6-B344-35ECA59E9A14}.Debug|Mixed Platforms.ActiveCfg = Debug|Any CPU
+		{7B90D541-C37E-44D6-B344-35ECA59E9A14}.Debug|Mixed Platforms.Build.0 = Debug|Any CPU
+		{7B90D541-C37E-44D6-B344-35ECA59E9A14}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{7B90D541-C37E-44D6-B344-35ECA59E9A14}.Debug|x86.Build.0 = Debug|Any CPU
+		{7B90D541-C37E-44D6-B344-35ECA59E9A14}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7B90D541-C37E-44D6-B344-35ECA59E9A14}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7B90D541-C37E-44D6-B344-35ECA59E9A14}.Release|Mixed Platforms.ActiveCfg = Release|Any CPU
+		{7B90D541-C37E-44D6-B344-35ECA59E9A14}.Release|Mixed Platforms.Build.0 = Release|Any CPU
+		{7B90D541-C37E-44D6-B344-35ECA59E9A14}.Release|x86.ActiveCfg = Release|Any CPU
+		{7B90D541-C37E-44D6-B344-35ECA59E9A14}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

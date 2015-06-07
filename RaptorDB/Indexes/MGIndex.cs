@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading;
 using System.IO;
 using RaptorDB.Common;
+using System.Collections.Concurrent;
 
 namespace RaptorDB
 {
@@ -46,30 +48,40 @@ namespace RaptorDB
             tree = new SafeDictionary<T, KeyInfo>(Global.PageItemCount);
             isDirty = false;
             FirstKey = default(T);
+            rwlock = new ReaderWriterLockSlim(LockRecursionPolicy.SupportsRecursion);
         }
         public int DiskPageNumber;
         public int RightPageNumber;
         public T FirstKey;
         public bool isDirty;
         public SafeDictionary<T, KeyInfo> tree;
-        public List<int> allocblocks = null;
+        public List<int> allocblocks;
+        public ReaderWriterLockSlim rwlock;
     }
 
     #endregion
 
-    internal class MGIndex<T> where T : IComparable<T>
+    public class MGIndex<T> where T : IComparable<T>
     {
         ILog _log = LogManager.GetLogger(typeof(MGIndex<T>));
-        private SafeSortedList<T, PageInfo> _pageList = new SafeSortedList<T, PageInfo>();
-        private SafeDictionary<int, Page<T>> _cache = new SafeDictionary<int, Page<T>>();
+        private SortedList<T, PageInfo> _pageList = new SortedList<T, PageInfo>();
+        private ConcurrentDictionary<int, Page<T>> _cache = new ConcurrentDictionary<int, Page<T>>();
+        //private SafeDictionary<int, CacheTimeOut> _usage = new SafeDictionary<int, CacheTimeOut>();
         private List<int> _pageListDiskPages = new List<int>();
         private IndexFile<T> _index;
         private bool _AllowDuplicates = true;
         private int _LastIndexedRecordNumber = 0;
         private int _maxPageItems = 0;
+        Func<T, T, int> _compFunc = null;
+
+        /// <summary>
+        /// lock read when reading anything and lock write if writing to pagelist and creating new pages
+        /// </summary>
+        private ReaderWriterLockSlim _listLock = new ReaderWriterLockSlim(LockRecursionPolicy.NoRecursion);
 
         public MGIndex(string path, string filename, byte keysize, ushort maxcount, bool allowdups)
         {
+            keysize = RDBDataType<T>.GetByteSize(keysize);
             _AllowDuplicates = allowdups;
             _index = new IndexFile<T>(path + Path.DirectorySeparatorChar + filename, keysize, maxcount);
             _maxPageItems = maxcount;
@@ -82,7 +94,11 @@ namespace RaptorDB
                 page.DiskPageNumber = _index.GetNewPageNumber();
                 page.isDirty = true;
                 _pageList.Add(page.FirstKey, new PageInfo(page.DiskPageNumber, 0, 0));
-                _cache.Add(page.DiskPageNumber, page);
+                _cache.TryAdd(page.DiskPageNumber, page);
+            }
+            if (typeof(T) == typeof(string))
+            {
+                _compFunc = (Func<T, T, int>)(Delegate)(Func<string, string, int>)CultureInfo.CurrentCulture.CompareInfo.Compare;
             }
         }
 
@@ -110,6 +126,8 @@ namespace RaptorDB
 
             // do all pages in between
 
+            throw new NotImplementedException();
+            //TODO: WTF ???
             return new WAHBitArray();
         }
 
@@ -146,11 +164,14 @@ namespace RaptorDB
         private object _setlock = new object();
         public void Set(T key, int val)
         {
-            lock (_setlock)
+            Page<T> page = null;
+            using (_listLock.Reading())
             {
                 PageInfo pi;
-                Page<T> page = LoadPage(key, out pi);
+                page = LoadPage(key, out pi);
 
+                using (page.rwlock.Writing())
+                {
                 KeyInfo ki;
                 if (page.tree.TryGetValue(key, out ki))
                 {
@@ -174,16 +195,19 @@ namespace RaptorDB
                     page.tree.Add(key, ki);
                 }
 
-                if (page.tree.Count > Global.PageItemCount)
-                    SplitPage(page);
-
                 _LastIndexedRecordNumber = val;
                 page.isDirty = true;
             }
         }
+            var c = page.tree.Count;
+            if (c > Global.PageItemCount || (c > Global.EarlyPageSplitSize && _pageList.Count <= Global.EarlyPageCount))
+                SplitPage(page.DiskPageNumber);
+        }
 
         public bool Get(T key, out int val)
         {
+            using (_listLock.Reading())
+            {
             val = -1;
             PageInfo pi;
             Page<T> page = LoadPage(key, out pi);
@@ -193,12 +217,15 @@ namespace RaptorDB
                 val = ki.RecordNumber;
             return ret;
         }
+        }
 
         public void SaveIndex()
         {
+            using (_listLock.Reading())
+            {
             _log.Debug("Total split time (s) = " + _totalsplits);
             _log.Debug("Total pages = " + _pageList.Count);
-            int[] keys = _cache.Keys();
+                var keys = _cache.Keys.ToArray();
             Array.Sort(keys);
             // save index to disk
             foreach (var i in keys)
@@ -213,14 +240,18 @@ namespace RaptorDB
             _index.SavePageList(_pageList, _pageListDiskPages);
             _index.BitmapFlush();
         }
+        }
 
         public void Shutdown()
         {
+            using (_listLock.Writing())
+            {
             SaveIndex();
             // save page list
             _index.SavePageList(_pageList, _pageListDiskPages);
             // shutdown
             _index.Shutdown();
+        }
         }
 
         public void FreeMemory()
@@ -235,8 +266,12 @@ namespace RaptorDB
                         free.Add(c.Key);
                 }
                 _log.Debug("releasing page count = " + free.Count + " out of " + _cache.Count);
+                Page<T> p;
                 foreach (var i in free)
-                    _cache.Remove(i);
+                {
+                    _cache.TryRemove(i, out p);
+                    p.rwlock.Dispose();
+            }
             }
             catch { }
         }
@@ -244,6 +279,8 @@ namespace RaptorDB
 
         public IEnumerable<int> GetDuplicates(T key)
         {
+            using (_listLock.Reading())
+            {
             PageInfo pi;
             Page<T> page = LoadPage(key, out pi);
             KeyInfo ki;
@@ -252,7 +289,7 @@ namespace RaptorDB
                 // get duplicates
                 if (ki.DuplicateBitmapNumber != -1)
                     return _index.GetDuplicatesRecordNumbers(ki.DuplicateBitmapNumber);
-
+            }
             return new List<int>();
         }
 
@@ -263,22 +300,30 @@ namespace RaptorDB
 
         public bool RemoveKey(T key)
         {
+            using (_listLock.Reading())
+            {
             PageInfo pi;
             Page<T> page = LoadPage(key, out pi);
             bool b = page.tree.Remove(key);
+                using (page.rwlock.Writing())
+                {
             // FIX : reset the first key for page ??
             if (b)
             {
-                pi.UniqueCount--;
+                        Interlocked.Decrement(ref pi.UniqueCount);
                 // FEATURE : decrease dup count
             }
             page.isDirty = true;
+                }
             return b;
+        }
         }
 
         #region [  P R I V A T E  ]
         private WAHBitArray doMoreOp(RDBExpression exp, T key)
         {
+            using (_listLock.Reading())
+            {
             bool found = false;
             int pos = FindPageOrLowerPosition(key, ref found);
             WAHBitArray result = new WAHBitArray();
@@ -289,7 +334,9 @@ namespace RaptorDB
                     doPageOperation(ref result, i);
             }
             // key page
-            Page<T> page = LoadPage(_pageList.GetValue(pos).PageNumber);
+                Page<T> page = LoadPage(_pageList.Values[pos].PageNumber);
+                using (page.rwlock.Reading())
+                {
             T[] keys = page.tree.Keys();
             Array.Sort(keys);
 
@@ -308,11 +355,15 @@ namespace RaptorDB
                 if (exp == RDBExpression.GreaterEqual && k.CompareTo(key) == 0)
                     result = result.Or(_index.GetDuplicateBitmap(bn));
             }
+                }
             return result;
+        }
         }
 
         private WAHBitArray doLessOp(RDBExpression exp, T key)
         {
+            using (_listLock.Reading())
+            {
             bool found = false;
             int pos = FindPageOrLowerPosition(key, ref found);
             WAHBitArray result = new WAHBitArray();
@@ -323,7 +374,9 @@ namespace RaptorDB
                     doPageOperation(ref result, i);
             }
             // key page
-            Page<T> page = LoadPage(_pageList.GetValue(pos).PageNumber);
+                Page<T> page = LoadPage(_pageList.Values[pos].PageNumber);
+                using (page.rwlock.Reading())
+                {
             T[] keys = page.tree.Keys();
             Array.Sort(keys);
             for (int i = 0; i < keys.Length; i++)
@@ -339,11 +392,15 @@ namespace RaptorDB
                 if (exp == RDBExpression.LessEqual && k.CompareTo(key) == 0)
                     result = result.Or(_index.GetDuplicateBitmap(bn));
             }
+                }
             return result;
+        }
         }
 
         private WAHBitArray doEqualOp(RDBExpression exp, T key, int maxsize)
         {
+            using (_listLock.Reading())
+            {
             PageInfo pi;
             Page<T> page = LoadPage(key, out pi);
             KeyInfo k;
@@ -359,10 +416,13 @@ namespace RaptorDB
             else
                 return new WAHBitArray();
         }
+        }
 
         private void doPageOperation(ref WAHBitArray res, int pageidx)
         {
-            Page<T> page = LoadPage(_pageList.GetValue(pageidx).PageNumber);
+            Page<T> page = LoadPage(_pageList.Values[pageidx].PageNumber);
+            using (page.rwlock.Reading())
+            {
             T[] keys = page.tree.Keys(); // avoid sync issues
             foreach (var k in keys)
             {
@@ -371,10 +431,24 @@ namespace RaptorDB
                 res = res.Or(_index.GetDuplicateBitmap(bn));
             }
         }
+        }
 
         private double _totalsplits = 0;
-        private void SplitPage(Page<T> page)
+        private void SplitPage(int num)
         {
+            Page<T> page = null;
+            if (_pageList.Count == 1 && _listLock.WaitingWriteCount > 0)
+                // some other thread is waiting to change the first page
+                return;
+            using (_listLock.Writing())
+            {
+                page = LoadPage(num);
+                if (page.tree.Count < Global.PageItemCount && (page.tree.Count < Global.EarlyPageSplitSize || _pageList.Count > Global.EarlyPageCount)) return;
+
+                using (page.rwlock.Writing())
+        {
+                    if (page.tree.Count < Global.PageItemCount && (page.tree.Count < Global.EarlyPageSplitSize || _pageList.Count > Global.EarlyPageCount)) return;
+
             // split the page
             DateTime dt = FastDateTime.Now;
 
@@ -401,15 +475,21 @@ namespace RaptorDB
             // dup counts
             _pageList.Add(keys[0], new PageInfo(page.DiskPageNumber, page.tree.Count, 0));
             page.FirstKey = keys[0];
+
             // FEATURE : dup counts
             _pageList.Add(newpage.FirstKey, new PageInfo(newpage.DiskPageNumber, newpage.tree.Count, 0));
-            _cache.Add(newpage.DiskPageNumber, newpage);
+                    _cache.TryAdd(newpage.DiskPageNumber, newpage);
 
-            _totalsplits += FastDateTime.Now.Subtract(dt).TotalSeconds;
+                    _totalsplits += FastDateTime.Now.Subtract(dt).TotalMilliseconds;
+        }
+
+            }
         }
 
         private Page<T> LoadPage(T key, out PageInfo pageinfo)
         {
+            if (!_listLock.IsReadLockHeld) throw new InvalidOperationException("readlock not held");
+
             int pagenum = -1;
             // find page in list of pages
 
@@ -417,7 +497,7 @@ namespace RaptorDB
             int pos = 0;
             if (key != null)
                 pos = FindPageOrLowerPosition(key, ref found);
-            pageinfo = _pageList.GetValue(pos);
+            pageinfo = _pageList.Values[pos];
             pagenum = pageinfo.PageNumber;
 
             Page<T> page;
@@ -425,21 +505,19 @@ namespace RaptorDB
             {
                 //load page from disk
                 page = _index.LoadPageFromPageNumber(pagenum);
-                _cache.Add(pagenum, page);
+                _cache.TryAdd(pagenum, page);
             }
             return page;
         }
 
         private Page<T> LoadPage(int pagenum)
         {
-            Page<T> page;
-            if (_cache.TryGetValue(pagenum, out page) == false)
-            {
-                //load page from disk
-                page = _index.LoadPageFromPageNumber(pagenum);
-                _cache.Add(pagenum, page);
-            }
-            return page;
+            if (!(_listLock.IsReadLockHeld || _listLock.IsUpgradeableReadLockHeld || _listLock.IsWriteLockHeld))
+                throw new InvalidOperationException("readlock not held");
+
+            // page usage data 
+            //_usage.Add(pagenum, new CacheTimeOut(pagenum, FastDateTime.Now.Ticks));
+            return _cache.GetOrAdd(pagenum, _index.LoadPageFromPageNumber);
         }
 
         private void SaveDuplicate(T key, ref KeyInfo ki)
@@ -452,22 +530,21 @@ namespace RaptorDB
 
         private int FindPageOrLowerPosition(T key, ref bool found)
         {
-            if (_pageList.Count == 0)
+            if (_pageList.Count <= 1)
                 return 0;
             // binary search
-            int lastlower = 0;
             int first = 0;
             int last = _pageList.Count - 1;
             int mid = 0;
-            while (first <= last)
+            while (first < last)
             {
-                mid = (first + last) >> 1;
-                T k = _pageList.GetKey(mid);
-                int compare = k.CompareTo(key);
+                // int divide and ceil
+                mid = ((first + last - 1) >> 1) + 1;
+                T k = _pageList.Keys[mid];
+                int compare = _compFunc == null ? k.CompareTo(key) : _compFunc(k, key);
                 if (compare < 0)
                 {
-                    lastlower = mid;
-                    first = mid + 1;
+                    first = mid;
                 }
                 if (compare == 0)
                 {
@@ -480,20 +557,23 @@ namespace RaptorDB
                 }
             }
 
-            return lastlower;
+            return first;
         }
         #endregion
 
         internal object[] GetKeys()
         {
+            using (_listLock.Reading())
+            {
             List<object> keys = new List<object>();
             for (int i = 0; i < _pageList.Count; i++)
             {
-                Page<T> page = LoadPage(_pageList.GetValue(i).PageNumber);
+                    Page<T> page = LoadPage(_pageList.Values[i].PageNumber);
                 foreach (var k in page.tree.Keys())
                     keys.Add(k);
             }
             return keys.ToArray();
+        }
         }
 
         internal int Count()
@@ -501,10 +581,9 @@ namespace RaptorDB
             int count = 0;
             for (int i = 0; i < _pageList.Count; i++)
             {
-                Page<T> page = LoadPage(_pageList.GetValue(i).PageNumber);
-                //foreach (var k in page.tree.Keys())
-                //    count++;
-                count += page.tree.Count;
+                Page<T> page = LoadPage(_pageList.Values[i].PageNumber);
+                foreach (var k in page.tree.Keys())
+                    count++;
             }
             return count;
         }

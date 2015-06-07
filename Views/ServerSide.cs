@@ -33,5 +33,22 @@ namespace Views
 
             return res.ToList<object>();
         }
+
+        public static List<sumtype> DoServerSideSumOnRaptor(IRaptorDB rap, string productName)
+        {
+            return rap.ServerSide((r, f) =>
+            {
+                var q = r.Query<SalesItemRowsViewRowSchema>(i => i.Product == productName);
+                var res = from x in q.Rows
+                          group x by x.Product into g
+                          select new sumtype
+                          {
+                              Product = g.Key,
+                              TotalPrice = g.Sum(p => p.Price),
+                              TotalQTY = g.Sum(p => p.QTY)
+                          };
+                return res.ToList<object>();
+            }, "").Cast<sumtype>().ToList();
+        }
     }
 }

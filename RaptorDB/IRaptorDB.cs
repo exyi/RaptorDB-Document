@@ -59,7 +59,7 @@ namespace RaptorDB.Common
         /// </summary>
         /// <param name="viewname"></param>
         /// <returns></returns>
-        Result<object> Query(string viewname);
+        IResult Query(string viewname);
 
         /// <summary>
         /// Query all data in a view with paging
@@ -68,7 +68,7 @@ namespace RaptorDB.Common
         /// <param name="start"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        Result<object> Query(string viewname, int start, int count);
+        IResult Query(string viewname, int start, int count);
 
         /// <summary>
         /// Query a View with a string filter
@@ -76,7 +76,7 @@ namespace RaptorDB.Common
         /// <param name="viewname"></param>
         /// <param name="filter"></param>
         /// <returns></returns>
-        Result<object> Query(string viewname, string filter);
+        IResult Query(string viewname, string filter);
 
         /// <summary>
         /// Query a View with a string filter with paging
@@ -86,7 +86,7 @@ namespace RaptorDB.Common
         /// <param name="start"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        Result<object> Query(string viewname, string filter, int start, int count);
+        IResult Query(string viewname, string filter, int start, int count);
 
         /// <summary>
         /// Query a view with filter, paging and sorting
@@ -96,7 +96,7 @@ namespace RaptorDB.Common
         /// <param name="start"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        Result<object> Query(string viewname, string filter, int start, int count, string orderby);
+        IResult Query(string viewname, string filter, int start, int count, string orderby);
 
         /// <summary>
         /// Count all data associated with View name

@@ -4,7 +4,7 @@ using System.Text;
 
 namespace RaptorDB
 {
-    internal enum RDBExpression
+    public enum RDBExpression
     {
         Equal,
         Greater,
@@ -16,7 +16,7 @@ namespace RaptorDB
         Contains
     }
 
-    internal interface IIndex
+    public interface IIndex
     {
         void Set(object key, int recnum);
         //WAHBitArray Query(object fromkey, object tokey, int maxsize);

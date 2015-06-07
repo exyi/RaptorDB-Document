@@ -10,6 +10,7 @@ using RaptorDB;
 using RaptorDB.Common;
 using SampleViews;
 using System.Linq.Expressions;
+using Views;
 using System.IO;
 
 namespace datagridbinding
@@ -123,21 +124,21 @@ namespace datagridbinding
 
         private static SalesInvoice CreateInvoice(int i)
         {
-            var inv = new SalesInvoice()
-            {
-                Date = Faker.DateTimeFaker.BirthDay(),// FastDateTime.Now.AddMinutes(r.Next(60)),
-                Serial = i % 10000,
-                CustomerName = Faker.NameFaker.Name(),// "Me " + i % 10,
-                NoCase = "Me " + i % 10,
-                Status = (byte)(i % 4),
-                Address = Faker.LocationFaker.Street(), //"df asd sdf asdf asdf",
-                Approved = i % 100 == 0 ? true : false
-            };
-            inv.Items = new List<LineItem>();
-            for (int k = 0; k < 5; k++)
-                inv.Items.Add(new LineItem() { Product = "prod " + k, Discount = 0, Price = 10 + k, QTY = 1 + k });
+                    var inv = new SalesInvoice()
+                    {
+                        Date = Faker.DateTimeFaker.BirthDay(),// FastDateTime.Now.AddMinutes(r.Next(60)),
+                        Serial = i % 10000,
+                        CustomerName = Faker.NameFaker.Name(),// "Me " + i % 10,
+                        NoCase = "Me " + i % 10,
+                        Status = (byte)(i % 4),
+                        Address = Faker.LocationFaker.Street(), //"df asd sdf asdf asdf",
+                        Approved = i % 100 == 0 ? true : false
+                    };
+                    inv.Items = new List<LineItem>();
+                    for (int k = 0; k < 5; k++)
+                        inv.Items.Add(new LineItem() { Product = "prod " + k, Discount = 0, Price = 10 + k, QTY = 1 + k });
             return inv;
-        }
+                }
 
         private void backupToolStripMenuItem_Click(object sender, EventArgs e)
         {
@@ -158,7 +159,7 @@ namespace datagridbinding
         private void serverSideSumQueryToolStripMenuItem_Click(object sender, EventArgs e)
         {
             //string prod1 = "prod 1";
-            objclass c = new objclass() { val = "prod 3" };
+            objclass c = new objclass() { val = "prod 1" };
             //decimal i = 20;
 
             //var q = rap.Count(typeof(SalesItemRowsView), 
@@ -167,11 +168,12 @@ namespace datagridbinding
 
             DateTime dt = FastDateTime.Now;
 
-            var qq = rap.ServerSide<LineItem>(Views.ServerSide.Sum_Products_based_on_filter,
-                //"product = \"prod 1\""
-                //(LineItem l) => (l.Product == c.val || l.Product == prod3 ) 
-                x => x.Product == c.val || x.Product == prod3
-                ).ToList();
+            //var qq = rap.ServerSide<LineItem>((r, filter) => Views.ServerSide.Sum_Products_based_on_filter(r, filter),
+            //    //"product = \"prod 1\""
+            //    //(LineItem l) => (l.Product == c.val || l.Product == prod3 ) 
+            //    x => x.Product == c.val || x.Product == prod3
+            //    ).ToList();
+            var qq = ServerSide.DoServerSideSumOnRaptor(rap, prod3);
             dataGridView1.DataSource = qq;
             toolStripStatusLabel2.Text = "Query time (sec) = " + FastDateTime.Now.Subtract(dt).TotalSeconds;
             toolStripStatusLabel1.Text = "Count = " + qq.Count.ToString("#,0");
@@ -199,7 +201,7 @@ namespace datagridbinding
             MessageBox.Show(""+kv.CountHF());
 
             foreach (var f in Directory.GetFiles("d:\\pp", "*.*"))
-            {
+        {
                 kv.SetObjectHF(f, File.ReadAllBytes(f));
             }
             

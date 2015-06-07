@@ -8,14 +8,14 @@ namespace RaptorDB.Views
 {
     internal class apimapper : IMapAPI
     {
-        public apimapper(ViewManager man, ViewHandler vhandler)
+        public apimapper(ViewManager man, IViewHandler vhandler)
         {
             _viewmanager = man;
             _viewhandler = vhandler;
         }
 
         ViewManager _viewmanager;
-        ViewHandler _viewhandler;
+        IViewHandler _viewhandler;
         private ILog _log = LogManager.GetLogger(typeof(apimapper));
         internal Dictionary<Guid, List<object[]>> emit = new Dictionary<Guid, List<object[]>>();
         internal Dictionary<Guid, List<object>> emitobj = new Dictionary<Guid, List<object>>();
