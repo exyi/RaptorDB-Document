@@ -70,7 +70,7 @@ namespace RaptorDB
         private KeyStore<Guid> _objStore;
         private KeyStore<Guid> _fileStore;
         private KeyStoreHF _objHF;
-        private string _Path = "";
+        private string _Path = string.Empty;
         private int _LastRecordNumberProcessed = -1; // used by background saver
         private int _LastFulltextIndexed = -1; // used by the fulltext indexer
         private int _LastBackupRecordNumber = -1;

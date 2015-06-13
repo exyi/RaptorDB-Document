@@ -145,43 +145,4 @@ namespace RaptorDB
     {
         bool GenerateClientData(IQueryInterface api, string username, List<Guid> DocsToSend);
     }
-
-    public enum COMMANDS
-    {
-        Save,
-        SaveBytes,
-        QueryType,
-        QueryStr,
-        Fetch,
-        FetchBytes,
-        Backup,
-        Delete,
-        DeleteBytes,
-        Restore,
-        AddUser,
-        ServerSide,
-        FullText,
-        CountType,
-        CountStr,
-        GCount,
-        DocHistory,
-        FileHistory,
-        FetchVersion,
-        FetchFileVersion,
-        CheckAssembly,
-        FetchHistoryInfo,
-        FetchByteHistoryInfo,
-        ViewDelete,
-        ViewDelete_t,
-        ViewInsert,
-        ViewInsert_t,
-        DocCount,
-        GetObjectHF,
-        SetObjectHF,
-        DeleteKeyHF,
-        CountHF,
-        ContainsHF,
-        GetKeysHF,
-        CompactStorageHF
-    }
 }

@@ -11,7 +11,7 @@ namespace Views
     {
         // so the result can be serialized and is not an anonymous type
         // since this uses fields, derive from the BindableFields for data binding to work
-        public class sumtype : RaptorDB.BindableFields
+        public class sumtype : BindableFields
         {
             public string Product;
             public decimal TotalPrice;
@@ -48,7 +48,7 @@ namespace Views
                               TotalQTY = g.Sum(p => p.QTY)
                           };
                 return res.ToList<object>();
-            }, "").Cast<sumtype>().ToList();
+            }, null).Cast<sumtype>().ToList();
         }
     }
 }

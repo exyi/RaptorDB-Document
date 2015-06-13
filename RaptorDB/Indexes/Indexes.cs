@@ -299,7 +299,7 @@ namespace RaptorDB
 
         public WAHBitArray Query(RDBExpression ex, object from, int maxsize)
         {
-            return base.Query("" + from, maxsize);
+            return base.Query(from.ToString(), maxsize);
         }
 
         public void SaveIndex()
@@ -311,7 +311,7 @@ namespace RaptorDB
 
         public WAHBitArray Query(object fromkey, object tokey, int maxsize)
         {
-            return base.Query("" + fromkey, maxsize);
+            return base.Query(fromkey.ToString(), maxsize);
         }
 
         public object[] GetKeys()

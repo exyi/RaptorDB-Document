@@ -20,7 +20,7 @@ namespace RaptorDB
             _path = Directory.GetCurrentDirectory();
             AppDomain.CurrentDomain.AssemblyResolve += new ResolveEventHandler(CurrentDomain_AssemblyResolve);
             _server = new NetworkServer();
-            
+
             if (_S == "/")// unix system
                 _datapath = DataPath.Replace("\\", "/");
             else
@@ -28,7 +28,7 @@ namespace RaptorDB
 
             if (_datapath.EndsWith(_S) == false)
                 _datapath += _S;
-            
+
             _raptor = RaptorDB.Open(DataPath);
             register = _raptor.GetType().GetMethod("RegisterView", BindingFlags.Instance | BindingFlags.Public);
             save = _raptor.GetType().GetMethod("Save", BindingFlags.Instance | BindingFlags.Public);
@@ -47,7 +47,7 @@ namespace RaptorDB
         private MethodInfo save = null;
         private SafeDictionary<Type, MethodInfo> _savecache = new SafeDictionary<Type, MethodInfo>();
         private SafeDictionary<string, ServerSideFuncInfo> _ssidecache = new SafeDictionary<string, ServerSideFuncInfo>();
-        private Dictionary<string, Handler> _handlers = new Dictionary<string, Handler>();
+        private Dictionary<PacketCommand, Handler> _handlers = new Dictionary<PacketCommand, Handler>();
         private const string _RaptorDB_users_config = "RaptorDB-Users.config";
 
         private Assembly CurrentDomain_AssemblyResolve(object sender, ResolveEventArgs args)
@@ -107,6 +107,7 @@ namespace RaptorDB
             try
             {
                 Handler d = null;
+                ret.OK = true;
                 if (_handlers.TryGetValue(p.Command, out d))
                     d(p, ret);
                 else
@@ -115,275 +116,247 @@ namespace RaptorDB
             catch (Exception ex)
             {
                 ret.OK = false;
+                ret.Error = ex.GetType().Name + ": " + ex.Message;
                 _log.Error(ex);
             }
             return ret;
         }
 
         private void InitializeCommandsDictionary()
-                {
-            _handlers.Add("" + COMMANDS.Save,
+        {
+            _handlers.Add(PacketCommand.Save,
                 (p, ret) =>
                 {
-                        var m = GetSave(p.Data.GetType());
-                    ret.OK = true;
-                        m.Invoke(_raptor, new object[] { p.Docid, p.Data });
+                    var m = GetSave(p.Data.GetType());
+                    m.Invoke(_raptor, new object[] { p.Docid, p.Data });
                 });
 
-            _handlers.Add("" + COMMANDS.SaveBytes,
+            _handlers.Add(PacketCommand.SaveBytes,
                 (p, ret) =>
                 {
-                        ret.OK = _raptor.SaveBytes(p.Docid, (byte[])p.Data);
+                    ret.OK = _raptor.SaveBytes(p.Docid, (byte[])p.Data);
                 });
 
-            _handlers.Add("" + COMMANDS.QueryType,
+            _handlers.Add(PacketCommand.QueryType,
                 (p, ret) =>
                 {
-                    var param = (object[])p.Data;
-                        Type t = Type.GetType((string)param[0]);
-                        string viewname = _raptor.GetViewName(t);
-                        ret.OK = true;
-                        ret.Data = _raptor.Query(viewname, (string)param[1], p.Start, p.Count, p.OrderBy);
-                });
-
-            _handlers.Add("" + COMMANDS.QueryStr,
-                (p, ret) =>
-                {
-                        ret.OK = true;
-                        ret.Data = _raptor.Query(p.Viewname, (string)p.Data, p.Start, p.Count, p.OrderBy);
-                });
-
-            _handlers.Add("" + COMMANDS.Fetch,
-                (p, ret) =>
-                {
-                        ret.OK = true;
-                        ret.Data = _raptor.Fetch(p.Docid);
-                });
-
-            _handlers.Add("" + COMMANDS.FetchBytes,
-                (p, ret) =>
-                {
-                        ret.OK = true;
-                        ret.Data = _raptor.FetchBytes(p.Docid);
-                });
-
-            _handlers.Add("" + COMMANDS.Backup,
-                (p, ret) =>
-                {
-                        ret.OK = _raptor.Backup();
-                });
-
-            _handlers.Add("" + COMMANDS.Delete,
-                (p, ret) =>
-                {
-                        ret.OK = _raptor.Delete(p.Docid);
-                });
-
-            _handlers.Add("" + COMMANDS.DeleteBytes,
-                (p, ret) =>
-                {
-                        ret.OK = _raptor.DeleteBytes(p.Docid);
-                });
-
-            _handlers.Add("" + COMMANDS.Restore,
-                (p, ret) =>
-                {
-                        ret.OK = true;
-                        Task.Factory.StartNew(() => _raptor.Restore());
-                });
-
-            _handlers.Add("" + COMMANDS.AddUser,
-                (p, ret) =>
-                {
-                    var param = (object[])p.Data;
-                        ret.OK = AddUser((string)param[0], (string)param[1], (string)param[2]);
-                });
-
-            _handlers.Add("" + COMMANDS.ServerSide,
-                (p, ret) =>
-                {
-                    var param = (object[])p.Data;
-                        ret.OK = true;
-                    ret.Data = _raptor.ServerSide(GetServerSideFuncCache(param[0].ToString(), param[1].ToString()).GetFunc(2), param[3].ToString());
-                });
-
-            _handlers.Add("" + COMMANDS.FullText,
-                (p, ret) =>
-                {
-                    var param = (object[])p.Data;
-                        ret.OK = true;
-                        ret.Data = _raptor.FullTextSearch("" + param[0]);
-                });
-
-            _handlers.Add("" + COMMANDS.CountType,
-                (p, ret) =>
-                {
-                        // count type
                     var param = (object[])p.Data;
                     Type t = Type.GetType((string)param[0]);
-                    string viewname2 = _raptor.GetViewName(t);
-                        ret.OK = true;
-                        ret.Data = _raptor.Count(viewname2, (string)param[1]);
+                    string viewname = _raptor.GetViewName(t);
+                    ret.Data = _raptor.Query(viewname, (string)param[1], p.Start, p.Count, p.OrderBy);
                 });
 
-            _handlers.Add("" + COMMANDS.CountStr,
+            _handlers.Add(PacketCommand.QueryStr,
                 (p, ret) =>
                 {
-                        // count str
-                        ret.OK = true;
-                        ret.Data = _raptor.Count(p.Viewname, (string)p.Data);
+                    ret.Data = _raptor.Query(p.Viewname, (string)p.Data, p.Start, p.Count, p.OrderBy);
                 });
 
-            _handlers.Add("" + COMMANDS.GCount,
+            _handlers.Add(PacketCommand.Fetch,
+                (p, ret) =>
+                {
+                    ret.Data = _raptor.Fetch(p.Docid);
+                });
+
+            _handlers.Add(PacketCommand.FetchBytes,
+                (p, ret) =>
+                {
+                    ret.OK = true;
+                    ret.Data = _raptor.FetchBytes(p.Docid);
+                });
+
+            _handlers.Add(PacketCommand.Backup,
+                (p, ret) =>
+                {
+                    ret.OK = _raptor.Backup();
+                });
+
+            _handlers.Add(PacketCommand.Delete,
+                (p, ret) =>
+                {
+                    ret.OK = _raptor.Delete(p.Docid);
+                });
+
+            _handlers.Add(PacketCommand.DeleteBytes,
+                (p, ret) =>
+                {
+                    ret.OK = _raptor.DeleteBytes(p.Docid);
+                });
+
+            _handlers.Add(PacketCommand.Restore,
+                (p, ret) =>
+                {
+                    Task.Factory.StartNew(() => _raptor.Restore());
+                });
+
+            _handlers.Add(PacketCommand.AddUser,
+                (p, ret) =>
+                {
+                    var param = (object[])p.Data;
+                    ret.OK = AddUser((string)param[0], (string)param[1], (string)param[2]);
+                });
+
+            _handlers.Add(PacketCommand.ServerSide,
+                (p, ret) =>
+                {
+                    var param = (object[])p.Data;
+                    ret.Data = _raptor.ServerSide(GetServerSideFuncCache(param[0].ToString(), param[1].ToString()).GetFunc(param[2]), (string)param[3]);
+                });
+
+            _handlers.Add(PacketCommand.FullText,
+                (p, ret) =>
+                {
+                    var param = (object[])p.Data;
+                    ret.Data = _raptor.FullTextSearch((string)param[0]);
+                });
+
+            _handlers.Add(PacketCommand.CountType,
+                (p, ret) =>
+                {
+                    // count type
+                    var param = (object[])p.Data;
+                    Type t = Type.GetType((string)param[0]);
+                    string viewname = _raptor.GetViewName(t);
+                    ret.Data = _raptor.Count(viewname, (string)param[1]);
+                });
+
+            _handlers.Add(PacketCommand.CountStr,
+                (p, ret) =>
+                {
+                    // count str
+                    ret.Data = _raptor.Count(p.Viewname, (string)p.Data);
+                });
+
+            _handlers.Add(PacketCommand.GCount,
                 (p, ret) =>
                 {
                     Type t = Type.GetType(p.Viewname);
-                    string viewname3 = _raptor.GetViewName(t);
-                        ret.OK = true;
-                        ret.Data = _raptor.Count(viewname3, (string)p.Data);
+                    string viewname = _raptor.GetViewName(t);
+                    ret.Data = _raptor.Count(viewname, (string)p.Data);
                 });
 
-            _handlers.Add("" + COMMANDS.DocHistory,
+            _handlers.Add(PacketCommand.DocHistory,
                 (p, ret) =>
                 {
-                        ret.OK = true;
-                        ret.Data = _raptor.FetchHistory(p.Docid);
+                    ret.Data = _raptor.FetchHistory(p.Docid);
                 });
 
-            _handlers.Add("" + COMMANDS.FileHistory,
+            _handlers.Add(PacketCommand.FileHistory,
                 (p, ret) =>
                 {
-                        ret.OK = true;
-                        ret.Data = _raptor.FetchBytesHistory(p.Docid);
+                    ret.Data = _raptor.FetchBytesHistory(p.Docid);
                 });
 
-            _handlers.Add("" + COMMANDS.FetchVersion,
+            _handlers.Add(PacketCommand.FetchVersion,
                 (p, ret) =>
                 {
-                        ret.OK = true;
-                        ret.Data = _raptor.FetchVersion((int)p.Data);
+                    ret.Data = _raptor.FetchVersion((int)p.Data);
                 });
 
-            _handlers.Add("" + COMMANDS.FetchFileVersion,
+            _handlers.Add(PacketCommand.FetchFileVersion,
                 (p, ret) =>
                 {
-                        ret.OK = true;
-                        ret.Data = _raptor.FetchBytesVersion((int)p.Data);
+                    ret.Data = _raptor.FetchBytesVersion((int)p.Data);
                 });
 
-            _handlers.Add("" + COMMANDS.CheckAssembly,
+            _handlers.Add(PacketCommand.CheckAssembly,
                 (p, ret) =>
                 {
-                        ret.OK = true;
-                        string typ = "";
-                        ret.Data = _raptor.GetAssemblyForView(p.Viewname, out typ);
-                        ret.Error = typ;
+                    string typ = "";
+                    ret.Data = _raptor.GetAssemblyForView(p.Viewname, out typ);
+                    ret.Error = typ;
                 });
-            _handlers.Add("" +COMMANDS.FetchHistoryInfo,
+            _handlers.Add(PacketCommand.FetchHistoryInfo,
                 (p, ret) =>
                 {
-                        ret.OK = true;
-                        ret.Data = _raptor.FetchHistoryInfo(p.Docid);
+                    ret.Data = _raptor.FetchHistoryInfo(p.Docid);
                 });
 
-            _handlers.Add("" + COMMANDS.FetchByteHistoryInfo,
+            _handlers.Add(PacketCommand.FetchByteHistoryInfo,
                 (p, ret) =>
                 {
-                        ret.OK = true;
-                        ret.Data = _raptor.FetchBytesHistoryInfo(p.Docid);
+                    ret.Data = _raptor.FetchBytesHistoryInfo(p.Docid);
                 });
 
-            _handlers.Add("" + COMMANDS.ViewDelete,
+            _handlers.Add(PacketCommand.ViewDelete,
                 (p, ret) =>
                 {
-                        ret.OK = true;
                     var param = (object[])p.Data;
-                        ret.Data = _raptor.ViewDelete((string)param[0], (string)param[1]);
+                    ret.Data = _raptor.ViewDelete((string)param[0], (string)param[1]);
                 });
 
-            _handlers.Add("" +COMMANDS.ViewDelete_t,
+            _handlers.Add(PacketCommand.ViewDelete_t,
                 (p, ret) =>
                 {
-                        ret.OK = true;
                     var param = (object[])p.Data;
                     Type t = Type.GetType((string)param[0]);
-                    string viewname4 = _raptor.GetViewName(t);
-                        ret.Data = _raptor.ViewDelete(viewname4, (string)param[1]);
+                    string viewname = _raptor.GetViewName(t);
+                    ret.Data = _raptor.ViewDelete(viewname, (string)param[1]);
                 });
 
-            _handlers.Add("" +COMMANDS.ViewInsert,
+            _handlers.Add(PacketCommand.ViewInsert,
                 (p, ret) =>
                 {
-                        ret.OK = true;
                     var param = (object[])p.Data;
-                        ret.Data = _raptor.ViewInsert((string)param[0], p.Docid, param[1]);
+                    ret.Data = _raptor.ViewInsert((string)param[0], p.Docid, param[1]);
                 });
 
-            _handlers.Add("" + COMMANDS.ViewInsert_t,
+            _handlers.Add(PacketCommand.ViewInsert_t,
                 (p, ret) =>
                 {
-                        ret.OK = true;
                     var param = (object[])p.Data;
                     Type t = Type.GetType((string)param[0]);
-                    string viewname5 = _raptor.GetViewName(t);
-                        ret.Data = _raptor.ViewInsert(viewname5, p.Docid, param[1]);
+                    string viewname = _raptor.GetViewName(t);
+                    ret.Data = _raptor.ViewInsert(viewname, p.Docid, param[1]);
                 });
 
-            _handlers.Add("" + COMMANDS.DocCount,
+            _handlers.Add(PacketCommand.DocCount,
                 (p, ret) =>
                 {
-                        ret.OK = true;
-                        ret.Data = _raptor.DocumentCount();
+                    ret.Data = _raptor.DocumentCount();
                 });
 
-            _handlers.Add("" +COMMANDS.GetObjectHF,
+            _handlers.Add(PacketCommand.GetObjectHF,
                 (p, ret) =>
                 {
-                        ret.OK = true;
-                        ret.Data = _raptor.GetKVHF().GetObjectHF((string)p.Data);
+                    ret.Data = _raptor.GetKVHF().GetObjectHF((string)p.Data);
                 });
 
-            _handlers.Add("" + COMMANDS.SetObjectHF,
+            _handlers.Add(PacketCommand.SetObjectHF,
                 (p, ret) =>
                 {
-                        ret.OK = true;
                     var param = (object[])p.Data;
-                        _raptor.GetKVHF().SetObjectHF((string)param[0], param[1]);
+                    _raptor.GetKVHF().SetObjectHF((string)param[0], param[1]);
                 });
 
-            _handlers.Add("" + COMMANDS.DeleteKeyHF,
+            _handlers.Add(PacketCommand.DeleteKeyHF,
                 (p, ret) =>
                 {
-                        ret.OK = true;
-                        ret.Data = _raptor.GetKVHF().DeleteKeyHF((string)p.Data);
+                    ret.Data = _raptor.GetKVHF().DeleteKeyHF((string)p.Data);
                 });
 
-            _handlers.Add("" +COMMANDS.CountHF,
+            _handlers.Add(PacketCommand.CountHF,
                 (p, ret) =>
                 {
-                        ret.OK = true;
-                        ret.Data = _raptor.GetKVHF().CountHF();
+                    ret.Data = _raptor.GetKVHF().CountHF();
                 });
 
-            _handlers.Add("" + COMMANDS.ContainsHF,
+            _handlers.Add(PacketCommand.ContainsHF,
                 (p, ret) =>
                 {
-                        ret.OK = true;
-                        ret.Data = _raptor.GetKVHF().ContainsHF((string)p.Data);
+                    ret.Data = _raptor.GetKVHF().ContainsHF((string)p.Data);
                 });
 
-            _handlers.Add("" + COMMANDS.GetKeysHF,
+            _handlers.Add(PacketCommand.GetKeysHF,
                 (p, ret) =>
                 {
-                        ret.OK = true;
-                        ret.Data = _raptor.GetKVHF().GetKeysHF();
+                    ret.Data = _raptor.GetKVHF().GetKeysHF();
                 });
 
-            _handlers.Add("" + COMMANDS.CompactStorageHF,
+            _handlers.Add(PacketCommand.CompactStorageHF,
                 (p, ret) =>
                 {
-                        ret.OK = true;
-                        _raptor.GetKVHF().CompactStorageHF();
+                    _raptor.GetKVHF().CompactStorageHF();
                 });
         }
 
@@ -406,7 +379,8 @@ namespace RaptorDB
             {
                 func = new ServerSideFuncInfo();
                 Type tt = Type.GetType(type);
-                var methodInfo = Type.GetType(type).GetMethod(method, new[] { typeof(IRaptorDB), typeof(string) });
+                var methodInfo = Type.GetType(type).GetMethod(method, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
+                if (methodInfo == null) throw new ArgumentException("specified method not found on type");
                 if (!methodInfo.IsStatic)
                 {
                     var targetParEx = Expression.Parameter(typeof(object), "target");

@@ -90,7 +90,7 @@ namespace RaptorDB.Views
 
         public int Count(string viewname)
         {
-            return _viewmanager.Count(viewname, "");
+            return _viewmanager.Count(viewname, null);
         }
 
         public int Count(string ViewName, string Filter)

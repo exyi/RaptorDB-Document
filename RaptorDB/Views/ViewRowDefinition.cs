@@ -83,7 +83,7 @@ namespace RaptorDB.Views
         }
     }
 
-    public class BoolColumnIndex<T> : IViewColumnIndexDefinition
+    public class BoolIndexColumnDefinition : IViewColumnIndexDefinition
     {
         public IIndex CreateIndex(string path, string name)
         {
@@ -115,6 +115,7 @@ namespace RaptorDB.Views
             return new ObjectToStringIndex<T>(path, name, MaxLength);
         }
     }
+
     public class NoIndexColumnDefinition : IViewColumnIndexDefinition
     {
         public IIndex CreateIndex(string path, string name)

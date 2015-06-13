@@ -55,7 +55,7 @@ namespace RaptorDB.Views
                 else if (lo == ExpressionType.GreaterThanOrEqual) exp = RDBExpression.GreaterEqual;
                 else if (lo == ExpressionType.NotEqual) exp = RDBExpression.NotEqual;
 
-                _bitmap.Push(qexpression("" + ln, exp, lv));
+                _bitmap.Push(qexpression(ln.ToString(), exp, lv));
             }
 
             if (t == ExpressionType.And || t == ExpressionType.AndAlso ||
@@ -91,7 +91,7 @@ namespace RaptorDB.Views
                 var leftStr = left.ToString().Substring(left.ToString().IndexOf('.') + 1);
                 var right = m.Arguments[1].ToString().Replace("\"", String.Empty);
                 RDBExpression exp = RDBExpression.Equal;
-                _bitmap.Push(qexpression("" + leftStr, exp, right));
+                _bitmap.Push(qexpression(leftStr, exp, right));
                 return null;
             }
             string mc = s.Substring(s.IndexOf('.') + 1);

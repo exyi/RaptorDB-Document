@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using RaptorDB;
+using RaptorDB.Views;
 
 
 namespace SampleViews
@@ -54,12 +55,12 @@ namespace SampleViews
         public string Address;
         public int Serial;
         public byte Status;
-        public bool? Approved;
+        public bool Approved;
         //public State InvoiceState;
     }
 
     [RegisterView]
-    public class SalesInvoiceView : View<SalesInvoice>
+    public class SalesInvoiceView : View<SalesInvoice, SalesInvoiceViewRowSchema>
     {
         public SalesInvoiceView()
         {
@@ -72,13 +73,10 @@ namespace SampleViews
             //// uncomment the following for transaction mode
             //this.TransactionMode = true;
 
-            this.Schema = typeof(SalesInvoiceViewRowSchema);
+            this.SetFullTextIndex(s => s.CustomerName);
+            this.SetFullTextIndex(s => s.Address);
 
-            this.FullTextColumns.Add("customername"); // this or the attribute
-            this.FullTextColumns.Add("address");
-
-            this.CaseInsensitiveColumns.Add("nocase"); // this or the attribute
-            //this.StringIndexLength.Add("nocase", 255);
+            this.SetStringIndex(s => s.NoCase, length: 255, ignoreCase: true);
 
             this.Mapper = (api, docid, doc) =>
             {
@@ -99,7 +97,7 @@ namespace SampleViews
     }
 
     [RegisterView]
-    public class SalesItemRowsView : View<SalesInvoice>
+    public class SalesItemRowsView : View<SalesInvoice, SalesItemRowsViewRowSchema>
     {
         public SalesItemRowsView()
         {
@@ -108,8 +106,6 @@ namespace SampleViews
             this.isPrimaryList = false;
             this.isActive = true;
             this.BackgroundIndexing = true;
-
-            this.Schema = typeof(SalesItemRowsViewRowSchema);
 
             this.Mapper = (api, docid, doc) =>
             {
@@ -129,7 +125,7 @@ namespace SampleViews
     }
 
     [RegisterView]
-    public class newview : View<SalesInvoice>
+    public class newview : View<SalesInvoice, NewViewRowSchema>
     {
         public newview()
         {
@@ -139,8 +135,6 @@ namespace SampleViews
             this.isActive = true;
             this.BackgroundIndexing = true;
             this.Version = 1;
-
-            this.Schema = typeof(NewViewRowSchema);
 
             this.Mapper = (api, docid, doc) =>
             {

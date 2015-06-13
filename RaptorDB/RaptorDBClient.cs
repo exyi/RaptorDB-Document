@@ -26,7 +26,7 @@ namespace RaptorDB
         public object GetObjectHF(string key)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.GetObjectHF;
+            p.Command = PacketCommand.GetObjectHF;
             p.Data = key;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
             if (ret.OK)
@@ -38,7 +38,7 @@ namespace RaptorDB
         public bool SetObjectHF(string key, object obj)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.SetObjectHF;
+            p.Command = PacketCommand.SetObjectHF;
             p.Data = new object[] { key, obj };
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
 
@@ -48,7 +48,7 @@ namespace RaptorDB
         public bool DeleteKeyHF(string key)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.DeleteKeyHF;
+            p.Command = PacketCommand.DeleteKeyHF;
             p.Data = key;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
 
@@ -58,7 +58,7 @@ namespace RaptorDB
         public int CountHF()
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.CountHF;
+            p.Command = PacketCommand.CountHF;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
 
             return (int)ret.Data;
@@ -67,7 +67,7 @@ namespace RaptorDB
         public bool ContainsHF(string key)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.ContainsHF;
+            p.Command = PacketCommand.ContainsHF;
             p.Data = key;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
 
@@ -77,7 +77,7 @@ namespace RaptorDB
         public string[] GetKeysHF()
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.GetKeysHF;
+            p.Command = PacketCommand.GetKeysHF;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
 
             return ((object[])ret.Data).Cast<string>().ToArray();
@@ -86,7 +86,7 @@ namespace RaptorDB
         public void CompactStorageHF()
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.CompactStorageHF;
+            p.Command = PacketCommand.CompactStorageHF;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
 
             return;
@@ -131,7 +131,7 @@ namespace RaptorDB
         public bool Save<T>(Guid docID, T document)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.Save;
+            p.Command = PacketCommand.Save;
             p.Docid = docID;
             p.Data = document;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
@@ -147,7 +147,7 @@ namespace RaptorDB
         public bool SaveBytes(Guid fileID, byte[] bytes)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.SaveBytes;
+            p.Command = PacketCommand.SaveBytes;
             p.Docid = fileID;
             p.Data = bytes;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
@@ -184,7 +184,7 @@ namespace RaptorDB
         public object Fetch(Guid docID)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.Fetch;
+            p.Command = PacketCommand.Fetch;
             p.Docid = docID;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
             if (ret.OK)
@@ -201,7 +201,7 @@ namespace RaptorDB
         public byte[] FetchBytes(Guid fileID)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.FetchBytes;
+            p.Command = PacketCommand.FetchBytes;
             p.Docid = fileID;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
             if (ret.OK)
@@ -225,7 +225,7 @@ namespace RaptorDB
         public bool Backup()
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.Backup;
+            p.Command = PacketCommand.Backup;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
             return ret.OK;
         }
@@ -236,7 +236,7 @@ namespace RaptorDB
         public void Restore()
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.Restore;
+            p.Command = PacketCommand.Restore;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
         }
 
@@ -248,7 +248,7 @@ namespace RaptorDB
         public bool Delete(Guid docid)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.Delete;
+            p.Command = PacketCommand.Delete;
             p.Docid = docid;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
             return ret.OK;
@@ -262,7 +262,7 @@ namespace RaptorDB
         public bool DeleteBytes(Guid fileid)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.DeleteBytes;
+            p.Command = PacketCommand.DeleteBytes;
             p.Docid = fileid;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
             return ret.OK;
@@ -278,7 +278,7 @@ namespace RaptorDB
         public bool AddUser(string username, string oldpassword, string newpassword)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.AddUser;
+            p.Command = PacketCommand.AddUser;
             p.Data = new object[] { username, oldpassword, newpassword };
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
             return ret.OK;
@@ -293,7 +293,7 @@ namespace RaptorDB
         public object[] ServerSide(ServerSideFunc func, string filter)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.ServerSide;
+            p.Command = PacketCommand.ServerSide;
             p.Data = new object[] { func.Method.ReflectedType.AssemblyQualifiedName, func.Method.Name, func.Target, filter };
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
             return (object[])ret.Data;
@@ -312,7 +312,7 @@ namespace RaptorDB
             ls.Visit(filter);
 
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.ServerSide;
+            p.Command = PacketCommand.ServerSide;
             p.Data = new object[] { func.Method.ReflectedType.AssemblyQualifiedName, func.Method.Name, func.Target, ls.sb.ToString() };
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
             return (object[])ret.Data;
@@ -326,7 +326,7 @@ namespace RaptorDB
         public int[] FullTextSearch(string filter)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.FullText;
+            p.Command = PacketCommand.FullText;
             p.Data = new object[] { filter };
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
             return (int[])ret.Data;
@@ -350,7 +350,7 @@ namespace RaptorDB
         /// <returns></returns>
         public IResult Query(string viewname, int start, int count)
         {
-            return Query(viewname, "", start, count);
+            return Query(viewname, null, start, count);
         }
 
         /// <summary>
@@ -368,7 +368,7 @@ namespace RaptorDB
             if (_assembly.TryGetValue(viewname, out b) == false)
             {
                 Packet pp = CreatePacket();
-                pp.Command = "" + COMMANDS.CheckAssembly;
+                pp.Command = PacketCommand.CheckAssembly;
                 pp.Viewname = viewname;
                 ReturnPacket r = (ReturnPacket)_client.Send(pp);
                 string type = r.Error;
@@ -385,7 +385,7 @@ namespace RaptorDB
                     _assembly.Add(viewname, true);
             }
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.QueryStr;
+            p.Command = PacketCommand.QueryStr;
             p.Viewname = viewname;
             p.Data = filter;
             p.Start = start;
@@ -409,7 +409,7 @@ namespace RaptorDB
             LINQString ls = new LINQString();
             ls.Visit(filter);
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.QueryStr;
+            p.Command = PacketCommand.QueryStr;
             p.Viewname = viewname;
             p.Start = start;
             p.Count = count;
@@ -426,7 +426,7 @@ namespace RaptorDB
         /// <returns></returns>
         public int Count(string viewname)
         {
-            return Count(viewname, "");
+            return Count(viewname, null);
         }
 
         /// <summary>
@@ -438,7 +438,7 @@ namespace RaptorDB
         public int Count(string viewname, string filter)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.CountStr;
+            p.Command = PacketCommand.CountStr;
             p.Viewname = viewname;
             p.Data = filter;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
@@ -453,7 +453,7 @@ namespace RaptorDB
         /// <returns></returns>
         public Result<TRowSchema> Query<TRowSchema>(Expression<Predicate<TRowSchema>> filter)
         {
-            return Query<TRowSchema>(filter, 0, -1, "");
+            return Query<TRowSchema>(filter, 0, -1, null);
         }
 
         /// <summary>
@@ -469,26 +469,13 @@ namespace RaptorDB
             LINQString ls = new LINQString();
             ls.Visit(filter);
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.QueryType;
+            p.Command = PacketCommand.QueryType;
             p.Start = start;
             p.Count = count;
             p.OrderBy = orderby;
             p.Data = new object[] { typeof(TRowSchema).AssemblyQualifiedName, ls.sb.ToString() };
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
-            Result<object> res = (Result<object>)ret.Data;
-            return GenericResult<TRowSchema>(res);
-        }
-
-        private static Result<TRowSchema> GenericResult<TRowSchema>(Result<object> res)
-        {
-            // FEATURE : dirty hack here to cleanup
-            Result<TRowSchema> result = new Result<TRowSchema>();
-            result.Count = res.Count;
-            result.EX = res.EX;
-            result.OK = res.OK;
-            result.TotalCount = res.TotalCount;
-            result.Rows = res.Rows.Cast<TRowSchema>().ToList<TRowSchema>();
-            return result;
+            return (Result<TRowSchema>)ret.Data;
         }
 
         /// <summary>
@@ -499,7 +486,7 @@ namespace RaptorDB
         /// <returns></returns>
         public Result<TRowSchema> Query<TRowSchema>(string filter)
         {
-            return Query<TRowSchema>(filter, 0, -1, "");
+            return Query<TRowSchema>(filter, 0, -1, null);
         }
 
         /// <summary>
@@ -513,14 +500,13 @@ namespace RaptorDB
         public Result<TRowSchema> Query<TRowSchema>(string filter, int start, int count, string orderby)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.QueryType;
+            p.Command = PacketCommand.QueryType;
             p.Start = start;
             p.Count = count;
             p.OrderBy = orderby;
             p.Data = new object[] { typeof(TRowSchema).AssemblyQualifiedName, filter };
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
-            Result<object> res = (Result<object>)ret.Data;
-            return GenericResult<TRowSchema>(res);
+            return (Result<TRowSchema>)ret.Data;
         }
 
         /// <summary>
@@ -534,7 +520,7 @@ namespace RaptorDB
             LINQString ls = new LINQString();
             ls.Visit(filter);
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.GCount;
+            p.Command = PacketCommand.GCount;
             p.Viewname = typeof(TRowSchema).AssemblyQualifiedName;
             p.Data = ls.sb.ToString();
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
@@ -549,7 +535,7 @@ namespace RaptorDB
         public int[] FetchHistory(Guid docid)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.DocHistory;
+            p.Command = PacketCommand.DocHistory;
             p.Docid = docid;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
             return (int[])ret.Data;
@@ -563,7 +549,7 @@ namespace RaptorDB
         public int[] FetchBytesHistory(Guid fileid)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.FileHistory;
+            p.Command = PacketCommand.FileHistory;
             p.Docid = fileid;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
             return (int[])ret.Data;
@@ -577,7 +563,7 @@ namespace RaptorDB
         public object FetchVersion(int versionNumber)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.FetchVersion;
+            p.Command = PacketCommand.FetchVersion;
             p.Data = versionNumber;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
             return ret.Data;
@@ -591,7 +577,7 @@ namespace RaptorDB
         public byte[] FetchBytesVersion(int versionNumber)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.FetchFileVersion;
+            p.Command = PacketCommand.FetchFileVersion;
             p.Data = versionNumber;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
             return (byte[])ret.Data;
@@ -607,7 +593,7 @@ namespace RaptorDB
         /// <returns></returns>
         public IResult Query(string viewname, string filter, int start, int count)
         {
-            return this.Query(viewname, filter, start, count, "");
+            return this.Query(viewname, filter, start, count, null);
         }
 
         /// <summary>
@@ -621,7 +607,7 @@ namespace RaptorDB
         /// <returns></returns>
         public IResult Query<TRowSchema>(string viewname, Expression<Predicate<TRowSchema>> filter, int start, int count)
         {
-            return this.Query(viewname, filter, start, count, "");
+            return this.Query(viewname, filter, start, count, null);
         }
 
         /// <summary>
@@ -634,7 +620,7 @@ namespace RaptorDB
         /// <returns></returns>
         public Result<TRowSchema> Query<TRowSchema>(Expression<Predicate<TRowSchema>> filter, int start, int count)
         {
-            return Query<TRowSchema>(filter, start, count, "");
+            return Query<TRowSchema>(filter, start, count, null);
         }
 
         /// <summary>
@@ -647,7 +633,7 @@ namespace RaptorDB
         /// <returns></returns>
         public Result<TRowSchema> Query<TRowSchema>(string filter, int start, int count)
         {
-            return Query<TRowSchema>(filter, start, count, "");
+            return Query<TRowSchema>(filter, start, count, null);
         }
 
         /// <summary>
@@ -658,7 +644,7 @@ namespace RaptorDB
         public HistoryInfo[] FetchHistoryInfo(Guid docid)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.FetchHistoryInfo;
+            p.Command = PacketCommand.FetchHistoryInfo;
             p.Docid = docid;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
             return (HistoryInfo[])ret.Data;
@@ -672,7 +658,7 @@ namespace RaptorDB
         public HistoryInfo[] FetchBytesHistoryInfo(Guid docid)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.FetchByteHistoryInfo;
+            p.Command = PacketCommand.FetchByteHistoryInfo;
             p.Docid = docid;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
             return (HistoryInfo[])ret.Data;
@@ -689,7 +675,7 @@ namespace RaptorDB
             LINQString ls = new LINQString();
             ls.Visit(filter);
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.ViewDelete_t;
+            p.Command = PacketCommand.ViewDelete_t;
             p.Data = new object[] { typeof(TRowSchema).AssemblyQualifiedName, ls.sb.ToString() };
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
             return (int)ret.Data;
@@ -704,7 +690,7 @@ namespace RaptorDB
         public int ViewDelete(string viewname, string filter)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.ViewDelete;
+            p.Command = PacketCommand.ViewDelete;
             p.Data = new object[] { viewname, filter };
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
             return (int)ret.Data;
@@ -720,7 +706,7 @@ namespace RaptorDB
         public bool ViewInsert<TRowSchema>(Guid id, TRowSchema row)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.ViewInsert_t;
+            p.Command = PacketCommand.ViewInsert_t;
             p.Docid = id;
             p.Data = new object[] { typeof(TRowSchema).AssemblyQualifiedName, row };
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
@@ -737,7 +723,7 @@ namespace RaptorDB
         public bool ViewInsert(string viewname, Guid id, object row)
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.ViewInsert;
+            p.Command = PacketCommand.ViewInsert;
             p.Docid = id;
             p.Data = new object[] { viewname, row };
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
@@ -751,7 +737,7 @@ namespace RaptorDB
         public long DocumentCount()
         {
             Packet p = CreatePacket();
-            p.Command = "" + COMMANDS.DocCount;
+            p.Command = PacketCommand.DocCount;
             ReturnPacket ret = (ReturnPacket)_client.Send(p);
             return (long)ret.Data;
         }

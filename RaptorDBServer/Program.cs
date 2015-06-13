@@ -29,6 +29,11 @@ Run with :
   -p <port number> [default = 90]
   -f <data folder path>
 ");
+                if (Environment.UserInteractive)
+                {
+                    Console.Write("wating for enter to exit ...");
+                    Console.ReadLine();
+                }
                 return;
             }
 
@@ -80,6 +85,7 @@ Run with :
 
         private static void Dostart()
         {
+            Console.WriteLine("Starting db engine, path: {0}", System.IO.Path.GetFullPath(Path));
             var _raptor = new RaptorDB.RaptorDBServer(Program.Port, Program.Path);
             Console.WriteLine("Press Enter to shutdown...");
             Console.ReadLine();

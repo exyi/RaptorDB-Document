@@ -181,7 +181,7 @@ namespace RaptorDB
             {
                 int c;
                 string word = s;
-                if (s == "") continue;
+                if (s.Length == 0) continue;
 
                 OPERATION op = OPERATION.OR;
                 if (defaulttoand)
@@ -310,7 +310,7 @@ namespace RaptorDB
             MemoryStream ms = new MemoryStream(b);
             BinaryReader br = new BinaryReader(ms, Encoding.UTF8);
             string s = br.ReadString();
-            while (s != "")
+            while (s.Length > 0)
             {
                 int off = br.ReadInt32();
                 _words.Add(s, off);
@@ -318,14 +318,14 @@ namespace RaptorDB
                 {
                     s = br.ReadString();
                 }
-                catch { s = ""; }
+                catch { s = string.Empty; }
             }
             _log.Debug("Word Count = " + _words.Count);
         }
 
         private void AddtoIndex(int recnum, string text)
         {
-            if (text == "" || text == null)
+            if (string.IsNullOrEmpty(text))
                 return;
             text = text.ToLowerInvariant(); // lowercase index 
             string[] keys;
@@ -345,7 +345,7 @@ namespace RaptorDB
 
             foreach (string key in keys)
             {
-                if (key == "")
+                if (string.IsNullOrEmpty(key))
                     continue;
 
                 int bmp;

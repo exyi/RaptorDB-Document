@@ -60,26 +60,25 @@ namespace RaptorDB
             {
                 // unpack data
                 byte[] g = null;
-                if (UnpackData(val, out val, out g))
+                UnpackData(val, out val, out g);
+
+                if (Helper.CompareMemCmp(bkey, g) != 0)
                 {
-                    if (Helper.CompareMemCmp(bkey, g) != 0)
+                    // if data not equal check duplicates (hash conflict)
+                    List<int> ints = new List<int>(_db.GetDuplicates(hc));
+                    ints.Reverse();
+                    foreach (int i in ints)
                     {
-                        // if data not equal check duplicates (hash conflict)
-                        List<int> ints = new List<int>(_db.GetDuplicates(hc));
-                        ints.Reverse();
-                        foreach (int i in ints)
-                        {
-                            byte[] bb = _db.FetchRecordBytes(i);
-                            if (UnpackData(bb, out val, out g))
-                            {
-                                if (Helper.CompareMemCmp(bkey, g) == 0)
-                                    return true;
-                            }
-                        }
-                        return false;
+                        byte[] bb = _db.FetchRecordBytes(i);
+                        UnpackData(bb, out val, out g);
+                        if (Helper.CompareMemCmp(bkey, g) == 0)
+                            return true;
+
                     }
-                    return true;
+                    return false;
                 }
+                return true;
+
             }
             return false;
         }
@@ -109,15 +108,13 @@ namespace RaptorDB
             _db.Shutdown();
         }
 
-        private bool UnpackData(byte[] buffer, out byte[] val, out byte[] key)
+        private void UnpackData(byte[] buffer, out byte[] val, out byte[] key)
         {
             int len = Helper.ToInt32(buffer, 0, false);
             key = new byte[len];
             Buffer.BlockCopy(buffer, 4, key, 0, len);
             val = new byte[buffer.Length - 4 - len];
             Buffer.BlockCopy(buffer, 4 + len, val, 0, buffer.Length - 4 - len);
-
-            return true;
         }
 
         public string ReadData(int recnumber)
@@ -125,11 +122,8 @@ namespace RaptorDB
             byte[] val;
             byte[] key;
             byte[] b = _db.FetchRecordBytes(recnumber);
-            if (UnpackData(b, out val, out key))
-            {
-                return Encoding.Unicode.GetString(val);
-            }
-            return "";
+            UnpackData(b, out val, out key);
+            return Encoding.Unicode.GetString(val);
         }
 
         internal void FreeMemory()
@@ -360,14 +354,12 @@ namespace RaptorDB
         public bool Get(T key, out string val)
         {
             byte[] b = null;
-            val = "";
+            val = null;
             bool ret = GetBytes(key, out b);
             if (ret)
             {
                 if (b != null)
                     val = Encoding.Unicode.GetString(b);
-                else
-                    val = "";
             }
             return ret;
         }
@@ -406,7 +398,7 @@ namespace RaptorDB
         {
             int recno = -1;
             // save to storage
-            recno = (int) _archive.WriteObject(key, doc);
+            recno = (int)_archive.WriteObject(key, doc);
             // save to index
             _index.Set(key, recno);
 
@@ -484,7 +476,7 @@ namespace RaptorDB
             else
                 _archive = new StorageFile<T>(db, SF_FORMAT.JSON, false);
 
-            _deleted = new BoolIndex(_Path, _FileName , "_deleted.idx");
+            _deleted = new BoolIndex(_Path, _FileName, "_deleted.idx");
 
             log.Debug("Current Count = " + RecordCount().ToString("#,0"));
 
@@ -602,7 +594,7 @@ namespace RaptorDB
         {
             int recno = -1;
             // save to storage
-            recno = (int) _archive.WriteReplicationObject(key, doc);
+            recno = (int)_archive.WriteReplicationObject(key, doc);
             // save to index
             _index.Set(key, recno);
 

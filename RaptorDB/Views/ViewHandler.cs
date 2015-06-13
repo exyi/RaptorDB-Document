@@ -60,23 +60,23 @@ namespace RaptorDB.Views
 
     internal class ViewHandler<TDoc, TSchema> : IViewHandler<TSchema>
     {
-        private RowFill<TSchema> _rowfiller;
         private View<TDoc> _view;
         ViewBase.MapFunctionDelgate<TDoc> mapper;
         protected static readonly string _S = Path.DirectorySeparatorChar.ToString();
 
         protected ILog _log = LogManager.GetLogger(typeof(ViewHandler<TDoc, TSchema>));
-        protected string _Path;
+        protected string _path;
         protected ViewManager _viewmanager;
         protected Dictionary<string, IIndex> _indexes = new Dictionary<string, IIndex>();
         protected StorageFile<Guid> _viewData;
         protected BoolIndex _deletedRows;
         protected string _docid = "docid";
-        protected string[] _colnames = new string[0];
+        protected string[] _colnames;
         protected ViewRowDefinition _schema;
         protected SafeDictionary<int, tran_data> _transactions = new SafeDictionary<int, tran_data>();
         protected SafeDictionary<string, int> _nocase = new SafeDictionary<string, int>();
         protected Dictionary<string, byte> _idxlen = new Dictionary<string, byte>();
+        RowFill<TSchema> _rowfill;
 
         protected System.Timers.Timer _saveTimer;
 
@@ -95,7 +95,7 @@ namespace RaptorDB.Views
 
         public ViewHandler(string path, ViewManager manager)
         {
-            _Path = path;
+            _path = path;
             _viewmanager = manager;
         }
 
@@ -127,20 +127,20 @@ namespace RaptorDB.Views
         {
             bool rebuild = false;
 
-            if (!_Path.EndsWith(_S)) _Path += _S;
-            _Path += viewName + _S;
-            if (Directory.Exists(_Path) == false)
+            if (!_path.EndsWith(_S)) _path += _S;
+            _path += viewName + _S;
+            if (Directory.Exists(_path) == false)
             {
-                Directory.CreateDirectory(_Path);
+                Directory.CreateDirectory(_path);
                 rebuild = true;
             }
             else
             {
                 // read version file and check with view
                 int version = 0;
-                if (File.Exists(_Path + viewName + ".version"))
+                if (File.Exists(_path + viewName + ".version"))
                 {
-                    int.TryParse(File.ReadAllText(_Path + viewName + ".version"), out version);
+                    int.TryParse(File.ReadAllText(_path + viewName + ".version"), out version);
                     if (version != viewVersion)
                     {
                         _log.Debug("Newer view version detected");
@@ -149,16 +149,16 @@ namespace RaptorDB.Views
                 }
             }
 
-            if (File.Exists(_Path + _dirtyFilename))
+            if (File.Exists(_path + _dirtyFilename))
             {
                 _log.Debug("Last shutdown failed, rebuilding view : " + viewName);
                 rebuild = true;
             }
 
-            if (File.Exists(_Path + _RaptorDBVersionFilename))
+            if (File.Exists(_path + _RaptorDBVersionFilename))
             {
                 // check view engine version
-                string s = File.ReadAllText(_Path + _RaptorDBVersionFilename);
+                string s = File.ReadAllText(_path + _RaptorDBVersionFilename);
                 int version = 0;
                 int.TryParse(s, out version);
                 if (version != _RaptorDBVersion)
@@ -176,14 +176,14 @@ namespace RaptorDB.Views
             if (rebuild)
             {
                 _log.Debug("Deleting old view data folder = " + viewName);
-                Directory.Delete(_Path, true);
-                Directory.CreateDirectory(_Path);
+                Directory.Delete(_path, true);
+                Directory.CreateDirectory(_path);
             }
 
 
-            _deletedRows = new BoolIndex(_Path, viewName, ".deleted");
+            _deletedRows = new BoolIndex(_path, viewName, ".deleted");
 
-            _viewData = new StorageFile<Guid>(_Path + viewName + ".mgdat");
+            _viewData = new StorageFile<Guid>(_path + viewName + ".mgdat");
 
             return rebuild;
         }
@@ -202,6 +202,8 @@ namespace RaptorDB.Views
                 Columns = view.IndexDefinitions.ToList()
             };
             _colnames = _schema.Columns.Select(v => v.Key).Where(c => c != _docid).ToArray();
+            //Array.Sort(_colnames);
+            _rowfill = ViewSchemaHelper.CreateRowFiller<TSchema>(_colnames);
 
             var rebuild = InitStorage(view.Name, view.Version);
 
@@ -343,7 +345,7 @@ namespace RaptorDB.Views
         // FEATURE : add query caching here
         public Result<TSchema> Query(string filter, int start, int count)
         {
-            return Query(filter, start, count, "");
+            return Query(filter, start, count, null);
         }
 
         IResult IViewHandler.Query(string filter, int start, int count, string orderby)
@@ -357,7 +359,7 @@ namespace RaptorDB.Views
 
         public Result<TSchema> Query(Expression<Predicate<TSchema>> filter, int start, int count)
         {
-            return Query(filter, start, count, "");
+            return Query(filter, start, count, null);
         }
 
         // FEATURE : add query caching here
@@ -385,7 +387,7 @@ namespace RaptorDB.Views
                     {
                         foreach (var r in kv.Value)
                         {
-                            rrows.Add(_rowfiller(r));
+                            rrows.Add(_rowfill(r));
                         }
                     }
                     trows = rrows.FindAll(filter.Compile());
@@ -393,7 +395,7 @@ namespace RaptorDB.Views
             }
 
             var order = SortBy(orderby);
-            bool desc = orderby.EndsWith(" desc", StringComparison.InvariantCultureIgnoreCase);
+            bool desc = orderby != null && orderby.EndsWith(" desc", StringComparison.InvariantCultureIgnoreCase);
             _log.Debug("query bitmap done (ms) : " + FastDateTime.Now.Subtract(dt).TotalMilliseconds);
             // exec query return rows
             return ReturnRows(ba, trows, start, count, order, desc);
@@ -405,7 +407,7 @@ namespace RaptorDB.Views
         }
         public Result<TSchema> Query(int start, int count)
         {
-            return Query(start, count, "");
+            return Query(start, count, null);
         }
 
         IResult IViewHandler.Query(int start, int count, string orderby)
@@ -473,7 +475,7 @@ namespace RaptorDB.Views
             if (b != null)
             {
                 object[] data = (object[])fastBinaryJSON.BJSON.ToObject(b);
-                rows.Add(_rowfiller(data));
+                rows.Add(_rowfill(data));
                 return true;
             }
             return false;
@@ -542,12 +544,12 @@ namespace RaptorDB.Views
                 _viewData.Shutdown();
 
                 // write view version
-                File.WriteAllText(_Path + _view.Name + ".version", _view.Version.ToString());
+                File.WriteAllText(_path + _view.Name + ".version", _view.Version.ToString());
 
-                File.WriteAllText(_Path + _RaptorDBVersionFilename, _RaptorDBVersion.ToString());
+                File.WriteAllText(_path + _RaptorDBVersionFilename, _RaptorDBVersion.ToString());
                 // remove dirty file
-                if (File.Exists(_Path + _dirtyFilename))
-                    File.Delete(_Path + _dirtyFilename);
+                if (File.Exists(_path + _dirtyFilename))
+                    File.Delete(_path + _dirtyFilename);
                 _log.Debug("Viewhandler shutdown done.");
             }
             catch (Exception ex)
@@ -576,9 +578,9 @@ namespace RaptorDB.Views
             if (count == -1) count = ret.TotalCount;
             if (count > 0)
             {
-                int len = orderby.Count;
-                if (len > 0)
+                if (orderby != null && orderby.Count > 0)
                 {
+                    int len = orderby.Count;
                     if (descending == false)
                     {
                         for (int idx = 0; idx < len; idx++)
@@ -661,7 +663,7 @@ namespace RaptorDB.Views
                 _log.Debug("rebuild view '" + _view.Name + "' done (s) = " + FastDateTime.Now.Subtract(dt).TotalSeconds);
 
                 // write version.dat file when done
-                File.WriteAllText(_Path + _view.Name + ".version", _view.Version.ToString());
+                File.WriteAllText(_path + _view.Name + ".version", _view.Version.ToString());
             }
             catch (Exception ex)
             {
@@ -672,12 +674,12 @@ namespace RaptorDB.Views
 
         private void CreateLoadIndexes(ViewRowDefinition viewRowDefinition)
         {
-            _indexes.Add(_docid, new TypeIndexes<Guid>(_Path, _docid, 16/*, allowDups: !_view.DeleteBeforeInsert*/));
+            _indexes.Add(_docid, new TypeIndexes<Guid>(_path, _docid, 16/*, allowDups: !_view.DeleteBeforeInsert*/));
             // load indexes
             foreach (var c in viewRowDefinition.Columns)
             {
                 if (c.Key != "docid")
-                    _indexes.Add(c.Key, c.Value.CreateIndex(_Path, c.Key));
+                    _indexes.Add(c.Key, c.Value.CreateIndex(_path, c.Key));
             }
         }
 
@@ -869,8 +871,8 @@ namespace RaptorDB.Views
             lock (_dfile)
             {
                 _isDirty = true;
-                if (File.Exists(_Path + _dirtyFilename) == false)
-                    File.WriteAllText(_Path + _dirtyFilename, "dirty");
+                if (File.Exists(_path + _dirtyFilename) == false)
+                    File.WriteAllText(_path + _dirtyFilename, "dirty");
             }
         }
 

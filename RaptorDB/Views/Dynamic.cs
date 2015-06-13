@@ -67,7 +67,7 @@ namespace System.Linq.Dynamic
 
         public static Expression<TDelegate> ParseLambda<TDelegate>(Type itType, Type resultType, string expression, params object[] values)
         {
-            return ParseLambda<TDelegate>(new ParameterExpression[] { Expression.Parameter(itType, "") }, resultType, expression, values);
+            return ParseLambda<TDelegate>(new ParameterExpression[] { Expression.Parameter(itType) }, resultType, expression, values);
         }
 
         public static Expression<TDelegate> ParseLambda<TDelegate>(ParameterExpression[] parameters, Type resultType, string expression, params object[] values)

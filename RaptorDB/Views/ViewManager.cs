@@ -57,7 +57,7 @@ namespace RaptorDB.Views
 
         public IResult Query(string viewname, string filter, int start, int count)
         {
-            return Query(viewname, filter, start, count, "");
+            return Query(viewname, filter, start, count, null);
         }
 
         public IResult Query(string viewname, int start, int count)
@@ -281,7 +281,7 @@ namespace RaptorDB.Views
 
         public Result<T> Query<T>(Expression<Predicate<T>> filter, int start, int count)
         {
-            return Query<T>(filter, start, count, "");
+            return Query<T>(filter, start, count, null);
         }
 
         public Result<T> Query<T>(Expression<Predicate<T>> filter, int start, int count, string orderby)
@@ -292,7 +292,7 @@ namespace RaptorDB.Views
 
         public Result<T> Query<T>(string filter, int start, int count)
         {
-            return Query<T>(filter, start, count, "");
+            return Query<T>(filter, start, count, null);
         }
 
         public Result<T> Query<T>(string filter, int start, int count, string orderby)

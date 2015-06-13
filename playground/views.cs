@@ -26,7 +26,7 @@ namespace playground
         public Dictionary<string, byte[]> Bytes;
     }
 
-    public class FriendsModelItemView : View<ModelItem>
+    public class FriendsModelItemView : View<ModelItem, FriendsModelItemView.RowSchema>
     {
         public class RowSchema : RDBSchema
         {
@@ -43,13 +43,7 @@ namespace playground
             // // uncomment the following for transaction mode
             //this.TransactionMode = true;
 
-            this.Schema = typeof(RowSchema);
-
-            //this.FullTextColumns.Add("customername"); // this or the attribute
-            //this.FullTextColumns.Add("address");
-
-            this.CaseInsensitiveColumns.Add("Name"); // this or the attribute
-            //this.StringIndexLength.Add("nocase", 255);
+            this.SetStringIndex(s => s.Name, 255, true);
 
             this.Mapper = (api, docid, doc) =>
             {
@@ -62,7 +56,7 @@ namespace playground
 
     }
 
-    public class DefaultModelItemView : RaptorDB.View<ModelItem>
+    public class DefaultModelItemView : RaptorDB.View<ModelItem, DefaultModelItemView.RowSchema>
     {
         public class RowSchema : RDBSchema
         {
@@ -80,13 +74,7 @@ namespace playground
             //// uncomment the following for transaction mode
             //this.TransactionMode = true;
 
-            this.Schema = typeof(RowSchema);
-
-            //this.FullTextColumns.Add("customername"); // this or the attribute
-            //this.FullTextColumns.Add("address");
-
-            this.CaseInsensitiveColumns.Add("Name"); // this or the attribute
-            //this.StringIndexLength.Add("nocase", 255);
+            this.SetStringIndex(s => s.Name, ignoreCase: true);
 
             this.Mapper = (api, docid, doc) =>
             {

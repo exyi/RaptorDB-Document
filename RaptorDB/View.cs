@@ -15,32 +15,32 @@ namespace RaptorDB
         /// Increment this when you change view definitions so the engine can rebuild the contents
         /// </summary>
         public int Version { get; set; }
-        
+
         /// <summary>
         /// Name of the view will be used for foldernames and filename and generated code
         /// </summary>
-        public string Name { get; set;}
-        
+        public string Name { get; set; }
+
         /// <summary>
         /// A text for describing this views purpose for other developers 
         /// </summary>
         public string Description { get; set; }
-        
+
         /// <summary>
         /// Column definitions for the view storage 
         /// </summary>
         public Type Schema { get; set; }
-        
+
         /// <summary>
         /// Is this the primary list and will be populated synchronously
         /// </summary>
         public bool isPrimaryList { get; set; }
-        
+
         /// <summary>
         /// Is this view active and will recieve data
         /// </summary>
         public bool isActive { get; set; }
-        
+
         /// <summary>
         /// Delete items on DocID before inserting new rows (default = true)
         /// </summary>
@@ -67,24 +67,24 @@ namespace RaptorDB
         /// define your full text columns here
         /// </summary>
         [Obsolete("You should use IndexDefinitions and ViewIndexDefinitionHelper extension methods")]
-        public List<string> FullTextColumns;
+        public List<string> FullTextColumns = new List<string>();
 
         /// <summary>
         /// When defining your own schems and you don't want dependancies to RaptorDB to propogate through your code 
         /// define your case insensitive columns here
         /// </summary>
         [Obsolete("You should use IndexDefinitions and ViewIndexDefinitionHelper extension methods")]
-        public List<string> CaseInsensitiveColumns;
+        public List<string> CaseInsensitiveColumns = new List<string>();
 
 
         [Obsolete("You should use IndexDefinitions and ViewIndexDefinitionHelper extension methods")]
-        public Dictionary<string, byte> StringIndexLength;
+        public Dictionary<string, byte> StringIndexLength = new Dictionary<string, byte>();
 
         /// <summary>
         /// Columns that you don't want to index
         /// </summary>
         [Obsolete("You should use IndexDefinitions and ViewIndexDefinitionHelper extension methods")]
-        public List<string> NoIndexingColumns;
+        public List<string> NoIndexingColumns = new List<string>();
 
         public Dictionary<string, IViewColumnIndexDefinition> IndexDefinitions { get; set; }
 
@@ -93,16 +93,20 @@ namespace RaptorDB
         {
             foreach (var p in Schema.GetProperties())
             {
-                if (IndexDefinitions.ContainsKey(p.Name)) return;
-                Type t = p.PropertyType;
-                IndexDefinitions[p.Name] = AutoInitMember(p, t);
+                if (!IndexDefinitions.ContainsKey(p.Name))
+                {
+                    Type t = p.PropertyType;
+                    IndexDefinitions[p.Name] = AutoInitMember(p, t);
+                }
             }
 
             foreach (var f in Schema.GetFields())
             {
-                if (IndexDefinitions.ContainsKey(f.Name)) return;
-                Type t = f.FieldType;
-                IndexDefinitions[f.Name] = AutoInitMember(f, t);
+                if (!IndexDefinitions.ContainsKey(f.Name))
+                {
+                    Type t = f.FieldType;
+                    IndexDefinitions[f.Name] = AutoInitMember(f, t);
+                }
             }
         }
 
@@ -132,10 +136,15 @@ namespace RaptorDB
                     if (!StringIndexLength.TryGetValue(p.Name, out length))
                         StringIndexLength.TryGetValue(p.Name.ToLower(), out length);
                 }
+
                 if (t == typeof(string))
                 {
                     // TODO: case sensitive index
                     return new StringIndexColumnDefinition(length);
+                }
+                else if (t == typeof(bool))
+                {
+                    return new BoolIndexColumnDefinition();
                 }
                 return new MGIndexColumnDefinition(t, length);
             }
@@ -153,10 +162,6 @@ namespace RaptorDB
             isActive = true;
             DeleteBeforeInsert = true;
             BackgroundIndexing = true;
-            FullTextColumns = new List<string>();
-            CaseInsensitiveColumns = new List<string>();
-            StringIndexLength = new Dictionary<string, byte>();
-            NoIndexingColumns = new List<string>();
             IndexDefinitions = new Dictionary<string, IViewColumnIndexDefinition>()
             {
                 {"docid", new MGIndexColumnDefinition<Guid>(16) }
@@ -171,7 +176,7 @@ namespace RaptorDB
 
         public void Verify()
         {
-            if (Name == null || Name == "")
+            if (string.IsNullOrEmpty(this.Name))
                 throw new Exception("Name must be given");
             if (Schema == null)
                 throw new Exception("Schema must be defined");
@@ -200,8 +205,11 @@ namespace RaptorDB
         }
     }
 
-    public class View<TDoc, TSchema>: View<TDoc>
+    public abstract class View<TDoc, TSchema> : View<TDoc>
     {
-
+        public View()
+        {
+            this.Schema = typeof(TSchema);
+        }
     }
 }

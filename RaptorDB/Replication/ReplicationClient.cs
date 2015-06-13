@@ -154,7 +154,7 @@ namespace RaptorDB.Replication
         private void SendPackageToHQ()
         {
             string fn = CreatePackageForSend();
-            if (fn != "")
+            if (!string.IsNullOrEmpty(fn))
             {
                 ReplicationPacket p = createpacket();
                 p.command = "packageforhq";
@@ -251,7 +251,7 @@ namespace RaptorDB.Replication
                 SaveConfig();
                 return filename + ".gz";
             }
-            return "";
+            return null;
         }
 
         private bool MatchType(string typename)
