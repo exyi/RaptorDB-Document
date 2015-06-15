@@ -62,7 +62,7 @@ namespace RaptorDB
                 byte[] g = null;
                 UnpackData(val, out val, out g);
 
-                if (Helper.CompareMemCmp(bkey, g) != 0)
+                if (!Helper.Cmp(bkey, g))
                 {
                     // if data not equal check duplicates (hash conflict)
                     List<int> ints = new List<int>(_db.GetDuplicates(hc));
@@ -71,7 +71,7 @@ namespace RaptorDB
                     {
                         byte[] bb = _db.FetchRecordBytes(i);
                         UnpackData(bb, out val, out g);
-                        if (Helper.CompareMemCmp(bkey, g) == 0)
+                        if (Helper.Cmp(bkey, g))
                             return true;
 
                     }

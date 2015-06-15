@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq.Expressions;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Linq;
 
 namespace RaptorDB.Common
 {
@@ -12,7 +14,7 @@ namespace RaptorDB.Common
 
         public SafeDictionary(int capacity)
         {
-        	_Dictionary = new Dictionary<TKey, TValue>(capacity);
+            _Dictionary = new Dictionary<TKey, TValue>(capacity);
         }
 
         public SafeDictionary()
@@ -85,14 +87,14 @@ namespace RaptorDB.Common
         }
     }
 
-    public class SafeSortedList<T,V>
+    public class SafeSortedList<T, V>
     {
         private object _padlock = new object();
         SortedList<T, V> _list = new SortedList<T, V>();
 
         public int Count
         {
-            get { lock(_padlock) return _list.Count; }
+            get { lock (_padlock) return _list.Count; }
         }
 
         public void Add(T key, V val)
@@ -143,16 +145,48 @@ namespace RaptorDB.Common
     public static class Helper
     {
         public static MurmurHash2Unsafe MurMur = new MurmurHash2Unsafe();
-        public static int CompareMemCmp(byte[] left, byte[] right)
+
+        public static unsafe bool Cmp(byte[] a, byte[] b)
         {
-            int c = left.Length;
-            if (c > right.Length)
-                c = right.Length;
-            return memcmp(left, right, c);
+            if (a.Length != b.Length)
+                return false;
+            fixed (byte* aptr = a)
+            {
+                fixed (byte* bptr = b)
+                {
+                    return Cmp(aptr, bptr, a.Length);
+                }
+            }
         }
 
-        [DllImport("msvcrt.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int memcmp(byte[] arr1, byte[] arr2, int cnt);
+        public static unsafe bool Cmp(byte* ptra, byte* ptrb, int len)
+        {
+            while (len >= 8)
+            {
+                if (*(long*)ptra != *(long*)ptrb)
+                    return false;
+                ptra += 8;
+                ptrb += 8;
+                len -= 8;
+            }
+            while (len >= 4)
+            {
+                if (*(int*)ptra != *(int*)ptrb)
+                    return false;
+                ptra += 4;
+                ptrb += 4;
+                len -= 4;
+            }
+            while (len > 0)
+            {
+                if (*ptra != *ptrb)
+                    return false;
+                ptrb++;
+                ptra++;
+                len--;
+            }
+            return true;
+        }
 
         public static int ToInt32(byte[] value, int startIndex, bool reverse)
         {

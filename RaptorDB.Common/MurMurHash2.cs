@@ -97,54 +97,58 @@ namespace RaptorDB.Common
 
     public class MurmurHash2Unsafe
     {
-        public UInt32 Hash(Byte[] data)
+        public uint Hash(byte[] data)
         {
             return Hash(data, 0xc58f1a7b);
         }
-        const UInt32 m = 0x5bd1e995;
-        const Int32 r = 24;
 
-        public unsafe UInt32 Hash(Byte[] data, UInt32 seed)
+        public unsafe uint Hash(byte[] data, uint seed)
         {
-            Int32 length = data.Length;
+            fixed (byte* firstByte = &data[0])
+            {
+                return Hash(firstByte, data.Length, seed);
+            }
+        }
+
+        const uint m = 0x5bd1e995;
+        const int r = 24;
+        public unsafe uint Hash(byte* firstByte, int length, uint seed)
+        {
             if (length == 0)
                 return 0;
-            UInt32 h = seed ^ (UInt32)length;
-            Int32 remainingBytes = length & 3; // mod 4
-            Int32 numberOfLoops = length >> 2; // div 4
-            fixed (byte* firstByte = &(data[0]))
+            uint h = seed ^ (uint)length;
+            int remainingBytes = length & 3; // mod 4
+            int numberOfLoops = length >> 2; // div 4
+            uint* realData = (uint*)firstByte;
+            while (numberOfLoops != 0)
             {
-                UInt32* realData = (UInt32*)firstByte;
-                while (numberOfLoops != 0)
-                {
-                    UInt32 k = *realData;
-                    k *= m;
-                    k ^= k >> r;
-                    k *= m;
+                uint k = *realData;
+                k *= m;
+                k ^= k >> r;
+                k *= m;
 
+                h *= m;
+                h ^= k;
+                numberOfLoops--;
+                realData++;
+            }
+            switch (remainingBytes)
+            {
+                case 3:
+                    h ^= (ushort)(*realData);
+                    h ^= ((uint)(*(((byte*)(realData)) + 2))) << 16;
                     h *= m;
-                    h ^= k;
-                    numberOfLoops--;
-                    realData++;
-                }
-                switch (remainingBytes)
-                {
-                    case 3:
-                        h ^= (UInt16)(*realData);
-                        h ^= ((UInt32)(*(((Byte*)(realData)) + 2))) << 16;
-                        h *= m;
-                        break;
-                    case 2:
-                        h ^= (UInt16)(*realData);
-                        h *= m;
-                        break;
-                    case 1:
-                        h ^= *((Byte*)realData);
-                        h *= m;
-                        break;
-                    default:
-                        break;
-                }
+                    break;
+                case 2:
+                    h ^= (*(ushort*)realData);
+                    h *= m;
+                    break;
+                case 1:
+                    h ^= *((byte*)realData);
+                    h *= m;
+                    break;
+                default:
+                    break;
             }
 
             // Do a few final mixes of the hash to ensure the last few

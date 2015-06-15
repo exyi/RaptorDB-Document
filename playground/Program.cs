@@ -9,6 +9,7 @@ using Faker;
 using System.Diagnostics;
 using System.Threading;
 using System.Collections.Concurrent;
+using GenericPointerHelpers;
 
 namespace playground
 {
@@ -17,13 +18,103 @@ namespace playground
         static void Main(string[] args)
         {
             new RRRandom().HackToFaker();
+            //TestMemcp(16);
+            TestHashtable();
+            TestHashtable();
+            TestHashtable();
+            TestHashtable();
+            TestHashtable();
+            TestHashtable();
+            Console.ReadLine();
+            return;
 
             Console.WriteLine("opening db");
             var rap = OpenDB();
             if (rap.Count("ModelItem") == 0) Insert(rap, 30000);
             // UpdateHF(rap, 3);
+
             QueryTest(rap);
             // rap.Shutdown();
+        }
+
+        static unsafe void TestHashtable()
+        {
+            var names = Enumerable.Repeat(0, 100000).Select(i => Guid.NewGuid()).Distinct().ToArray();
+            var dictionary = new Dictionary<Guid, int>(190000);
+            var pht = PageHashTableHelper.CreateStructStruct<Guid, int>(100000);
+            Console.WriteLine("testing");
+            var sw = Stopwatch.StartNew();
+            foreach (var name in names)
+            {
+                dictionary.Add(name, 120);
+            }
+            Console.WriteLine("dictionary write: {0}", sw.Elapsed);
+            sw.Restart();
+            foreach (var name in names)
+            {
+                var i = dictionary[name];
+            }
+            Console.WriteLine("dictionary read: {0}", sw.Elapsed);
+            sw.Restart();
+            foreach (var name in names)
+            {
+                pht.Set(name, 120);
+            }
+            Console.WriteLine("PageHashTable write: {0}", sw.Elapsed);
+            sw.Restart();
+            foreach (var name in names)
+            {
+                pht.Get(name);
+            }
+            Console.WriteLine("PageHashTable read: {0}", sw.Elapsed);
+            pht.Dispose();
+        }
+
+        static unsafe void TestMemcp(uint size)
+        {
+            const int iter = 100000;
+            var from = new byte[size];
+            var to = new byte[size];
+            fixed (byte* fromPtr = from)
+            {
+                fixed (byte* toPtr = to)
+                {
+                    Console.WriteLine("testing memcpy, {0} bytes", size);
+                    var sw = Stopwatch.StartNew();
+                    for (int i = 0; i < iter; i++)
+                    {
+                        GenericPointerHelper.CopyBytes(fromPtr, toPtr, size);
+                    }
+                    Console.WriteLine("unaligned: {0}", sw.Elapsed);
+                    sw.Restart();
+                    for (int i = 0; i < iter; i++)
+                    {
+                        GenericPointerHelper.CopyBytesAlligned(fromPtr, toPtr, size);
+                    }
+                    Console.WriteLine("alligned: {0}", sw.Elapsed);
+                    sw.Restart();
+                    for (int i = 0; i < iter; i++)
+                    {
+                        for (int j = 0; j < size; j++)
+                        {
+                            *(toPtr + j) = *(fromPtr + j);
+                        }
+                    }
+                    Console.WriteLine("stupidcopy: {0}", sw.Elapsed);
+                    sw.Restart();
+                    for (int i = 0; i < iter; i++)
+                    {
+                        Buffer.BlockCopy(from, 0, to, 0, (int)size);
+                    }
+                    Console.WriteLine("Buffer.BlockCopy: {0}", sw.Elapsed);
+                    sw.Restart();
+                    for (int i = 0; i < iter; i++)
+                    {
+                        Array.Copy(from, to, (int)size);
+                    }
+                    Console.WriteLine("Array.Copy: {0}", sw.Elapsed);
+                }
+            }
         }
 
         static void QueryTest(IRaptorDB rap)
