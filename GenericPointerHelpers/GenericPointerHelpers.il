@@ -95,27 +95,35 @@
     // Code size       6 (0x6)
     .maxstack  8
     ldarg.1
-    // unaligned. 1
     ldarg.0
-    // unaligned. 1
     ldarg.2
 	unaligned. 1
     cpblk
     ret
-  } // end of method GenericPointerHelper::Write
+  }
 
   .method public hidebysig static void CopyBytesAlligned(void* from, void* 'to', unsigned int32 'count') cil managed
   {
     // Code size       6 (0x6)
     .maxstack  8
     ldarg.1
-    // unaligned. 1
     ldarg.0
-    // unaligned. 1
     ldarg.2
     cpblk
     ret
-  } // end of method GenericPointerHelper::Write
+  }
+
+  .method public hidebysig static void InitMemory(void* 'ptr', unsigned int32 'count', unsigned int8 'value') cil managed
+  {
+    // Code size       6 (0x6)
+    .maxstack  8
+    ldarg.0
+    ldarg.2
+    ldarg.1
+	unaligned. 1
+    initblk
+    ret
+  }
 
 
 } // end of class GenericPointerHelpers.GenericPointerHelper

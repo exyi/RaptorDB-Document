@@ -7,13 +7,14 @@ using System.Reflection.Emit;
 using System.Runtime.InteropServices;
 using System.Text;
 using static RaptorDB.Common.PageHashTableHelper;
+using System.Collections;
 
 namespace RaptorDB.Common
 {
-    public unsafe class PageHashTable<TKey, TValue> : IDisposable
+    public unsafe class PageHashTable<TKey, TValue> : IDisposable, IDictionary<TKey, TValue>
     {
 
-        public readonly int Count;
+        public readonly int Capacity;
         public readonly int KeySize;
         public readonly IPageSerializer<TKey> KeySerializer;
         public readonly int ValueSize;
@@ -23,12 +24,13 @@ namespace RaptorDB.Common
         public readonly uint Seed = 0xc58f1a7b;
         public readonly byte* StartPointer;
         private readonly bool dealloc;
+        private int count = 0;
 
         public PageHashTable(int count, IPageSerializer<TKey> keySerializer, IPageSerializer<TValue> valueSerializer,
             byte* startPointer = null,
             int clusterSize = 16)
         {
-            this.Count = count;
+            this.Capacity = count;
             this.KeySerializer = keySerializer;
             this.ValueSerializer = valueSerializer;
 
@@ -64,7 +66,7 @@ namespace RaptorDB.Common
         {
             byte stopMap = stopOnDeleted ? (byte)3 : (byte)1;
             byte hashMap = (byte)(hash | 3);
-            int hashIndex = ((int)hash & 0x7fffffff) % Count;
+            int hashIndex = ((int)hash & 0x7fffffff) % Capacity;
             var clusterOffset = hashIndex % ClusterSize;
             var clusterIndex = hashIndex / ClusterSize;
             int diffPlus = -1;
@@ -80,18 +82,18 @@ namespace RaptorDB.Common
                     //     [2] (6b): first 6 hash bits
                     if ((flags | 2) == hashMap && Helper.Cmp(ptr + 1, key, KeySize))
                     {
-                        return hashIndex + i % Count;
+                        return hashIndex + i % Capacity;
                     }
                     if ((flags & stopMap) == 0)
                     {
-                        return -(hashIndex + i + 1) % Count;
+                        return -(hashIndex + i + 1) % Capacity;
                     }
-                    if (hashIndex + i == Count) ptr = StartPointer;
+                    if (hashIndex + i == Capacity) ptr = StartPointer;
                     else ptr += EntrySize;
                 }
                 if (diffPlus == -1)
-                    diffPlus = (int)((hash * 41) % Count) | 1;
-                clusterIndex = (clusterIndex + diffPlus) % (Count / ClusterSize);
+                    diffPlus = (int)((hash * 41) % Capacity) | 1;
+                clusterIndex = (clusterIndex + diffPlus) % (Capacity / ClusterSize);
                 hashIndex = clusterIndex + clusterOffset;
             }
             while (true);
@@ -108,28 +110,40 @@ namespace RaptorDB.Common
 
         public TValue Get(TKey key)
         {
+            TValue value;
+            TryGetValue(key, out value);
+            return value;
+        }
+
+        public bool TryGetValue(TKey key, out TValue value)
+        {
             fixed (byte* kptr = new byte[KeySize])
             {
                 if (KeySerializer != null)
                     KeySerializer.Save(kptr, key);
-                else
-                    GenericPointerHelper.Write(kptr, key);
+                else GenericPointerHelper.Write(kptr, key);
                 var hash = Helper.MurMur.Hash(kptr, KeySize, Seed);
                 byte* pointer;
                 if (FindEntry(kptr, hash, false, out pointer) >= 0)
                 {
-                    if (KeySerializer != null)
-                        return ValueSerializer.Read(pointer + 1 + KeySize);
-                    return GenericPointerHelper.Read<TValue>(pointer + 1 + KeySize);
+                    if (ValueSerializer != null)
+                        value = ValueSerializer.Read(pointer + 1 + KeySize);
+                    else value = GenericPointerHelper.Read<TValue>(pointer + 1 + KeySize);
+                    return true;
                 }
-                else return default(TValue);
+                else
+                {
+                    value = default(TValue);
+                    return false;
+                }
             }
         }
+
         /// <summary>
-        /// Sets value
+        /// Sets the value
         /// </summary>
         /// <returns>if something was replaced</returns>
-        public bool Set(TKey key, TValue value)
+        public bool Set(TKey key, TValue value, bool allowOverwrite = true)
         {
             fixed (byte* kptr = new byte[KeySize])
             {
@@ -139,6 +153,11 @@ namespace RaptorDB.Common
                 var hash = Helper.MurMur.Hash(kptr, KeySize, Seed);
                 byte* pointer;
                 var index = FindEntry(kptr, hash, true, out pointer);
+                if (index < 0)
+                {
+                    if (!allowOverwrite) throw new ArgumentException("An item with the same key already exists");
+                    count++;
+                }
 
                 SetEntry(pointer, hash, kptr, value);
 
@@ -146,10 +165,23 @@ namespace RaptorDB.Common
             }
         }
 
-        public TValue this[TKey key]
+        private void Remove(byte* ptr)
         {
-            get { return Get(key); }
+            *ptr = 2;
+            GenericPointerHelper.InitMemory(ptr + 1, (uint)(KeySize + ValueSize), 0);
         }
+
+        void ReadEntry(byte* ptr, out TKey key, out TValue value)
+        {
+            if (KeySerializer != null)
+                key = KeySerializer.Read(ptr + 1);
+            else key = GenericPointerHelper.Read<TKey>(ptr + 1);
+
+            if (ValueSerializer != null)
+                value = ValueSerializer.Read(ptr + 1 + KeySize);
+            else value = GenericPointerHelper.Read<TValue>(ptr + 1 + KeySize);
+        }
+
 
         public void Dispose()
         {
@@ -163,11 +195,173 @@ namespace RaptorDB.Common
                 Marshal.FreeHGlobal(new IntPtr(StartPointer));
         }
 
+        public void CopyTo(TKey[] keys, TValue[] values)
+        {
+            var ptr = StartPointer;
+            for (int i = 0, hIndex = 0; hIndex < Capacity; hIndex++)
+            {
+                if ((*ptr & 1) == 1)
+                {
+                    TKey key;
+                    TValue value;
+                    ReadEntry(ptr, out key, out value);
+                    if (values != null && values.Length > i) values[i] = value;
+                    if (keys != null && keys.Length > i) keys[i] = key;
+                    i++;
+                }
+                ptr++;
+            }
+        }
+
+        #region IDictionary
+
+        public ICollection<TKey> Keys
+        {
+            get
+            {
+                var keys = new TKey[count];
+                CopyTo(keys, null);
+                return keys;
+            }
+        }
+
+        public ICollection<TValue> Values
+        {
+            get
+            {
+                var values = new TValue[count];
+                CopyTo(null, values);
+                return values;
+            }
+        }
+
+        public int Count
+        {
+            get
+            {
+                return count;
+            }
+        }
+
+        public bool IsReadOnly
+        {
+            get
+            {
+                throw new NotImplementedException();
+            }
+        }
+
+        public TValue this[TKey key]
+        {
+            get
+            {
+                return Get(key);
+            }
+
+            set
+            {
+                Set(key, value);
+            }
+        }
+
+        public bool ContainsKey(TKey key)
+        {
+            fixed (byte* kptr = new byte[KeySize])
+            {
+                if (KeySerializer != null)
+                    KeySerializer.Save(kptr, key);
+                else
+                    GenericPointerHelper.Write(kptr, key);
+                var hash = Helper.MurMur.Hash(kptr, KeySize, Seed);
+                byte* pointer;
+                return FindEntry(kptr, hash, false, out pointer) >= 0;
+            }
+        }
+
+        public void Add(TKey key, TValue value)
+        {
+            Set(key, value, false);
+        }
+
+        public bool Remove(TKey key)
+        {
+            fixed (byte* kptr = new byte[KeySize])
+            {
+                if (KeySerializer != null) KeySerializer.Save(kptr, key);
+                else GenericPointerHelper.Write(kptr, key);
+                var hash = Helper.MurMur.Hash(kptr, KeySize, Seed);
+                byte* pointer;
+                if (FindEntry(kptr, hash, true, out pointer) >= 0)
+                {
+                    Remove(pointer);
+                    count--;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public void Add(KeyValuePair<TKey, TValue> item)
+        {
+            Set(item.Key, item.Value, false);
+        }
+
+        public void Clear()
+        {
+            GenericPointerHelper.InitMemory(StartPointer, (uint)(Capacity * EntrySize), 0);
+        }
+
+        public bool Contains(KeyValuePair<TKey, TValue> item)
+        {
+            TValue value;
+            if (TryGetValue(item.Key, out value))
+            {
+                return value.Equals(item.Value);
+            }
+            return false;
+        }
+
+        public void CopyTo(KeyValuePair<TKey, TValue>[] array, int arrayIndex)
+        {
+            var ptr = StartPointer;
+            for (int i = arrayIndex, hIndex = 0; hIndex < Capacity && i < array.Length; hIndex++)
+            {
+                if ((*ptr & 1) == 1)
+                {
+                    TKey key;
+                    TValue value;
+                    ReadEntry(ptr, out key, out value);
+                    array[i] = new KeyValuePair<TKey, TValue>(key, value);
+                    i++;
+                }
+                ptr += EntrySize;
+            }
+        }
+
+        public bool Remove(KeyValuePair<TKey, TValue> item)
+        {
+            if (Contains(item))
+                return Remove(item.Key);
+            return false;
+        }
+
+        public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator()
+        {
+            var array = new KeyValuePair<TKey, TValue>[count];
+            CopyTo(array, 0);
+            return ((IEnumerable<KeyValuePair<TKey, TValue>>)array).GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+        #endregion
+
         ~PageHashTable()
         {
             Dispose(false);
         }
-
     }
     public unsafe static class PageHashTableHelper
     {
@@ -259,10 +453,10 @@ namespace RaptorDB.Common
         }
 
         public static PageHashTable<TKey, TValue> CreateStructStruct<TKey, TValue>(int count, byte* startPointer = null)
-            where TValue: struct
-            where TKey: struct
+            where TValue : struct
+            where TKey : struct
         {
-            return new PageHashTable<TKey, TValue>(count, 
+            return new PageHashTable<TKey, TValue>(count,
                 //new StructPageSerializer<TKey>(), new StructPageSerializer<TValue>(), 
                 null, null,
                 startPointer);

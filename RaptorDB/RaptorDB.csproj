@@ -134,6 +134,7 @@
     <Compile Include="Indexes\IIndex.cs" />
     <Compile Include="Indexes\Indexes.cs" />
     <Compile Include="Indexes\IndexFile.cs" />
+    <Compile Include="Indexes\MemoryMappedIndexFile.cs" />
     <Compile Include="Indexes\MGIndex.cs" />
     <Compile Include="Interfaces.cs" />
     <Compile Include="IRaptorDB.cs" />
