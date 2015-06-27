@@ -8,10 +8,13 @@ using System.Runtime.InteropServices;
 using System.Text;
 using static RaptorDB.Common.PageHashTableHelper;
 using System.Collections;
+using System.Threading;
+using System.Runtime.CompilerServices;
+using System.Diagnostics;
 
 namespace RaptorDB.Common
 {
-    public unsafe class PageHashTable<TKey, TValue> : IDisposable, IDictionary<TKey, TValue>
+    public unsafe class PageHashTableBase<TKey, TValue> : IDisposable, IEnumerable<KeyValuePair<TKey, TValue>>
     {
 
         public readonly int Capacity;
@@ -23,14 +26,29 @@ namespace RaptorDB.Common
         public readonly int ClusterSize;
         public readonly uint Seed = 0xc58f1a7b;
         public readonly byte* StartPointer;
-        private readonly bool dealloc;
-        private int count = 0;
+        public readonly bool AllowDuplicates;
+        protected readonly bool dealloc;
+        protected int count = 0;
+        protected int uniqCount = 0;
 
-        public PageHashTable(int count, IPageSerializer<TKey> keySerializer, IPageSerializer<TValue> valueSerializer,
-            byte* startPointer = null,
-            int clusterSize = 16)
+        // sets are not thread safe, so one buffer is enough
+        protected byte[] setKeyBuffer;
+
+        protected SimpleBufferManager readKeyBufferManager;
+
+
+        public PageHashTableBase(int capacity,
+            IPageSerializer<TKey> keySerializer,
+            IPageSerializer<TValue> valueSerializer,
+            byte* startPointer,
+            int clusterSize,
+            bool allowDups)
         {
-            this.Capacity = count;
+            // TODO: smarter capacity to be sure that nothing wrong will happen
+
+            if (capacity % clusterSize != 0) throw new ArgumentException(string.Format("capacity ({0}) must be divisible by cluster size ({1})", capacity, clusterSize));
+
+            this.Capacity = capacity;
             this.KeySerializer = keySerializer;
             this.ValueSerializer = valueSerializer;
 
@@ -38,10 +56,11 @@ namespace RaptorDB.Common
             ValueSize = valueSerializer == null ? GenericPointerHelper.SizeOf<TValue>() : valueSerializer.Size;
             EntrySize = KeySize + ValueSize + 1;
             ClusterSize = clusterSize;
+            AllowDuplicates = allowDups;
 
             if (startPointer == null)
             {
-                StartPointer = (byte*)Marshal.AllocHGlobal(count * EntrySize).ToPointer();
+                StartPointer = (byte*)Marshal.AllocHGlobal(capacity * EntrySize).ToPointer();
                 dealloc = true;
             }
             else
@@ -49,6 +68,9 @@ namespace RaptorDB.Common
                 StartPointer = startPointer;
                 GC.SuppressFinalize(this);
             }
+
+            setKeyBuffer = new byte[KeySize];
+            readKeyBufferManager = new SimpleBufferManager(KeySize);
         }
 
         public int FindEntry(byte[] key, bool stopOnDeleted)
@@ -62,9 +84,112 @@ namespace RaptorDB.Common
             }
         }
 
-        protected int FindEntry(byte* key, uint hash, bool stopOnDeleted, out byte* pointer)
+        protected void WriteKey(byte* pointer, TKey value)
         {
-            byte stopMap = stopOnDeleted ? (byte)3 : (byte)1;
+            if (KeySerializer != null)
+                KeySerializer.Save(pointer, value);
+            else GenericPointerHelper.Write(pointer, value);
+        }
+
+        protected TValue ReadValue(byte* pointer)
+        {
+            if (ValueSerializer != null)
+                return ValueSerializer.Read(pointer);
+            else return GenericPointerHelper.Read<TValue>(pointer);
+        }
+
+        protected TKey ReadKey(byte* pointer)
+        {
+            if (KeySerializer != null)
+                return KeySerializer.Read(pointer);
+            else return GenericPointerHelper.Read<TKey>(pointer);
+        }
+
+        protected int FindEntry(byte* key, uint hash, bool insert, out byte* pointer)
+        {
+            // on insert: stop on first entry without value
+            // on lookup: stop on first entry without continuation
+            var stopMap = insert ? 1u : 3u;
+            // on insert & AllowDuplicates: return only on the last value
+            var returnMap = (insert && AllowDuplicates) ? 0u : 2u;
+            var hashMap = ((hash & 0xfc) | 1 | returnMap);
+            int hashIndex = ((int)hash & 0x7fffffff) % Capacity;
+            var clusterOffset = hashIndex % ClusterSize;
+            var clusterIndex = hashIndex / ClusterSize;
+            int diffPlus = -1;
+            do
+            {
+                pointer = StartPointer + (EntrySize * hashIndex);
+                for (int i = 0; i < ClusterSize; i++)
+                {
+                    uint flags = *pointer;
+                    // flags: 
+                    //     [0] (1b): value
+                    //     [1] (1b): continue search => empty = 00, (last) value = 01, deleted = 10, value (and not last) = 11
+                    //     [2] (6b): first 6 hash bits
+                    if ((flags & stopMap) == 0)
+                    {
+                        return -(((hashIndex + i) % Capacity) + 1);
+                    }
+                    if ((flags | returnMap) == hashMap && Helper.Cmp(pointer + 1, key, KeySize))
+                    {
+                        return hashIndex + i % Capacity;
+                    }
+                    if (hashIndex + i == Capacity) pointer = StartPointer;
+                    else pointer += EntrySize;
+                }
+                if (diffPlus == -1)
+                    diffPlus = (int)((hash * 41) % Capacity) | 1;
+                clusterIndex = (clusterIndex + diffPlus) % (Capacity / ClusterSize);
+                hashIndex = clusterIndex * ClusterSize + clusterOffset;
+            }
+            while (true);
+        }
+
+        protected int FindNextEntry(byte* key, uint hash, ref byte* pointer)
+        {
+            byte hashMap = (byte)(hash | 3);
+            var clusterOffset = ((int)hash & 0x7fffffff) % ClusterSize;
+            var startingAt = ((int)(pointer - StartPointer) / EntrySize - clusterOffset) % ClusterSize;
+            int hashIndex = (int)(pointer - StartPointer) / EntrySize - startingAt;
+            int clusterIndex = hashIndex / ClusterSize;
+            int diffPlus = -1;
+
+
+            startingAt++;
+            pointer += EntrySize;
+            do
+            {
+                for (int i = startingAt; i < ClusterSize; i++)
+                {
+                    byte flags = *pointer;
+                    // flags: 
+                    //     [0] (1b): value
+                    //     [1] (1b): continue search => empty = 00, (last) value = 01, deleted = 10, value (and not last) = 11
+                    //     [2] (6b): first 6 hash bits
+                    if (flags == 0)
+                    {
+                        return -(((hashIndex + i) % Capacity) + 1);
+                    }
+                    else if ((flags | 2) == hashMap && Helper.Cmp(pointer + 1, key, KeySize))
+                    {
+                        return hashIndex + i % Capacity;
+                    }
+                    else if (hashIndex + i == Capacity) pointer = StartPointer;
+                    else pointer += EntrySize;
+                }
+                if (diffPlus == -1)
+                    diffPlus = (int)((hash * 41) % Capacity) | 1;
+                clusterIndex = (clusterIndex + diffPlus) % (Capacity / ClusterSize);
+                hashIndex = clusterIndex * ClusterSize + clusterOffset;
+                pointer = StartPointer + (EntrySize * hashIndex);
+                startingAt = 0;
+            }
+            while (true);
+        }
+        [Obsolete]
+        protected int FindEntry(byte* key, uint hash, TValue value, out byte* pointer)
+        {
             byte hashMap = (byte)(hash | 3);
             int hashIndex = ((int)hash & 0x7fffffff) % Capacity;
             var clusterOffset = hashIndex % ClusterSize;
@@ -72,43 +197,47 @@ namespace RaptorDB.Common
             int diffPlus = -1;
             do
             {
-                var ptr = pointer = StartPointer + (EntrySize * hashIndex);
+                pointer = StartPointer + (EntrySize * hashIndex);
                 for (int i = 0; i < ClusterSize; i++)
                 {
-                    byte flags = *ptr;
+                    byte flags = *pointer;
                     // flags: 
                     //     [0] (1b): value
-                    //     [1] (1b): deleted => empty = 00, value = 01, deleted = 10
+                    //     [1] (1b): continue search => empty = 00, (last) value = 01, deleted = 10, value (and not last) = 11
                     //     [2] (6b): first 6 hash bits
-                    if ((flags | 2) == hashMap && Helper.Cmp(ptr + 1, key, KeySize))
+                    if ((flags | 2) == hashMap && Helper.Cmp(pointer + 1, key, KeySize))
                     {
-                        return hashIndex + i % Capacity;
+                        TValue val;
+                        if (ValueSerializer != null) val = ValueSerializer.Read(pointer + KeySize + 1);
+                        else val = GenericPointerHelper.Read<TValue>(pointer);
+                        if (value.Equals(val))
+                            return hashIndex + i % Capacity;
                     }
-                    if ((flags & stopMap) == 0)
+                    if (flags == 0)
                     {
                         return -(hashIndex + i + 1) % Capacity;
                     }
-                    if (hashIndex + i == Capacity) ptr = StartPointer;
-                    else ptr += EntrySize;
+                    if (hashIndex + i == Capacity) pointer = StartPointer;
+                    else pointer += EntrySize;
                 }
                 if (diffPlus == -1)
                     diffPlus = (int)((hash * 41) % Capacity) | 1;
                 clusterIndex = (clusterIndex + diffPlus) % (Capacity / ClusterSize);
-                hashIndex = clusterIndex + clusterOffset;
+                hashIndex = clusterIndex * ClusterSize + clusterOffset;
             }
             while (true);
         }
 
-        private void SetEntry(byte* ptr, uint keyHash, byte* key, TValue value)
+        protected void SetEntry(byte* ptr, uint keyHash, byte* key, TValue value)
         {
             *ptr = (byte)((keyHash & ~3) | 1);
             ptr++;
             GenericPointerHelper.CopyBytes(key, ptr, (uint)KeySize);
             if (ValueSerializer != null) ValueSerializer.Save(ptr + KeySize, value);
-            else GenericPointerHelper.Write(ptr, value);
+            else GenericPointerHelper.Write(ptr + KeySize, value);
         }
 
-        public TValue Get(TKey key)
+        public TValue FirstOrDefault(TKey key)
         {
             TValue value;
             TryGetValue(key, out value);
@@ -117,25 +246,23 @@ namespace RaptorDB.Common
 
         public bool TryGetValue(TKey key, out TValue value)
         {
-            fixed (byte* kptr = new byte[KeySize])
+            var buffer = readKeyBufferManager.GetBuffer();
+            fixed (byte* kptr = buffer)
             {
-                if (KeySerializer != null)
-                    KeySerializer.Save(kptr, key);
-                else GenericPointerHelper.Write(kptr, key);
+                WriteKey(kptr, key);
                 var hash = Helper.MurMur.Hash(kptr, KeySize, Seed);
                 byte* pointer;
-                if (FindEntry(kptr, hash, false, out pointer) >= 0)
+                bool ret;
+                if (ret = FindEntry(kptr, hash, false, out pointer) >= 0)
                 {
-                    if (ValueSerializer != null)
-                        value = ValueSerializer.Read(pointer + 1 + KeySize);
-                    else value = GenericPointerHelper.Read<TValue>(pointer + 1 + KeySize);
-                    return true;
+                    value = ReadValue(pointer + 1 + KeySize);
                 }
                 else
                 {
                     value = default(TValue);
-                    return false;
                 }
+                readKeyBufferManager.ReleaseBuffer(buffer);
+                return ret;
             }
         }
 
@@ -145,7 +272,7 @@ namespace RaptorDB.Common
         /// <returns>if something was replaced</returns>
         public bool Set(TKey key, TValue value, bool allowOverwrite = true)
         {
-            fixed (byte* kptr = new byte[KeySize])
+            fixed (byte* kptr = setKeyBuffer)
             {
                 if (KeySerializer != null)
                     KeySerializer.Save(kptr, key);
@@ -153,15 +280,28 @@ namespace RaptorDB.Common
                 var hash = Helper.MurMur.Hash(kptr, KeySize, Seed);
                 byte* pointer;
                 var index = FindEntry(kptr, hash, true, out pointer);
+
+                Debug.Assert(index < 0 || ReadKey(pointer + 1).Equals(key));
+
                 if (index < 0)
                 {
-                    if (!allowOverwrite) throw new ArgumentException("An item with the same key already exists");
                     count++;
                 }
+                else if (AllowDuplicates)
+                {
+                    Debug.Assert((*pointer & 2) == 0, "FindEntry should find last value in chain BUT it has continue flag");
+                    // mark as with value and continue
+                    *pointer |= 2;
+                    index = FindNextEntry(kptr, hash, ref pointer);
+                    Debug.Assert(index < 0, "FindEntry should find last value in chain BUT the next one exist");
+                    count++;
+                }
+                else if (!allowOverwrite) throw new ArgumentException("An item with the same key already exists");
 
                 SetEntry(pointer, hash, kptr, value);
 
-                return index < 0;
+                // replaced if FindEntry returned positive index
+                return index >= 0;
             }
         }
 
@@ -181,7 +321,6 @@ namespace RaptorDB.Common
                 value = ValueSerializer.Read(ptr + 1 + KeySize);
             else value = GenericPointerHelper.Read<TValue>(ptr + 1 + KeySize);
         }
-
 
         public void Dispose()
         {
@@ -212,8 +351,6 @@ namespace RaptorDB.Common
                 ptr++;
             }
         }
-
-        #region IDictionary
 
         public ICollection<TKey> Keys
         {
@@ -247,26 +384,14 @@ namespace RaptorDB.Common
         {
             get
             {
-                throw new NotImplementedException();
+                return false;
             }
         }
 
-        public TValue this[TKey key]
+        public bool Contains(TKey key)
         {
-            get
-            {
-                return Get(key);
-            }
-
-            set
-            {
-                Set(key, value);
-            }
-        }
-
-        public bool ContainsKey(TKey key)
-        {
-            fixed (byte* kptr = new byte[KeySize])
+            var buffer = readKeyBufferManager.GetBuffer();
+            fixed (byte* kptr = buffer)
             {
                 if (KeySerializer != null)
                     KeySerializer.Save(kptr, key);
@@ -274,7 +399,9 @@ namespace RaptorDB.Common
                     GenericPointerHelper.Write(kptr, key);
                 var hash = Helper.MurMur.Hash(kptr, KeySize, Seed);
                 byte* pointer;
-                return FindEntry(kptr, hash, false, out pointer) >= 0;
+                var index = FindEntry(kptr, hash, false, out pointer);
+                readKeyBufferManager.ReleaseBuffer(buffer);
+                return index >= 0;
             }
         }
 
@@ -285,7 +412,7 @@ namespace RaptorDB.Common
 
         public bool Remove(TKey key)
         {
-            fixed (byte* kptr = new byte[KeySize])
+            fixed (byte* kptr = setKeyBuffer)
             {
                 if (KeySerializer != null) KeySerializer.Save(kptr, key);
                 else GenericPointerHelper.Write(kptr, key);
@@ -311,14 +438,21 @@ namespace RaptorDB.Common
             GenericPointerHelper.InitMemory(StartPointer, (uint)(Capacity * EntrySize), 0);
         }
 
-        public bool Contains(KeyValuePair<TKey, TValue> item)
+        public bool Contains(TKey key, TValue value)
         {
-            TValue value;
-            if (TryGetValue(item.Key, out value))
+            var buffer = readKeyBufferManager.GetBuffer();
+            fixed (byte* kptr = buffer)
             {
-                return value.Equals(item.Value);
+                if (KeySerializer != null)
+                    KeySerializer.Save(kptr, key);
+                else
+                    GenericPointerHelper.Write(kptr, key);
+                var hash = Helper.MurMur.Hash(kptr, KeySize, Seed);
+                byte* pointer;
+                var index = FindEntry(kptr, hash, value, out pointer);
+                readKeyBufferManager.ReleaseBuffer(buffer);
+                return index >= 0;
             }
-            return false;
         }
 
         public void CopyTo(KeyValuePair<TKey, TValue>[] array, int arrayIndex)
@@ -338,11 +472,16 @@ namespace RaptorDB.Common
             }
         }
 
-        public bool Remove(KeyValuePair<TKey, TValue> item)
+        public BitArray GetBlockUsageBitmap()
         {
-            if (Contains(item))
-                return Remove(item.Key);
-            return false;
+            var bm = new BitArray(Capacity);
+            byte* pointer = StartPointer;
+            for (int i = 0; i < Capacity; i++)
+            {
+                bm.Set(i, *pointer != 0);
+                pointer += EntrySize;
+            }
+            return bm;
         }
 
         public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator()
@@ -356,11 +495,216 @@ namespace RaptorDB.Common
         {
             return GetEnumerator();
         }
-        #endregion
 
-        ~PageHashTable()
+        [Flags]
+        enum EntryFlags : byte
+        {
+            Empty = 0,
+            Value = 1,
+            ContinueSearch = 2,
+            ValueAndContinue = 3
+        }
+
+        ~PageHashTableBase()
         {
             Dispose(false);
+        }
+
+        protected struct SimpleBufferManager
+        {
+            // TODO: multiple buffers
+            public readonly int Length;
+            byte[] buffer;
+
+            public SimpleBufferManager(int length)
+            {
+                this.Length = length;
+                this.buffer = null;
+            }
+
+            public byte[] GetBuffer()
+            {
+                return Interlocked.Exchange(ref buffer, null) ?? new byte[Length];
+            }
+
+            public void ReleaseBuffer(byte[] buffer)
+            {
+                // set only if null. To not keep new object to next GC generation
+                Interlocked.CompareExchange(ref this.buffer, buffer, null);
+            }
+        }
+    }
+
+    public unsafe class PageHashTable<TKey, TValue> : PageHashTableBase<TKey, TValue>, IDictionary<TKey, TValue>
+    {
+        public PageHashTable(int capacity,
+            IPageSerializer<TKey> keySerializer,
+            IPageSerializer<TValue> valueSerializer,
+            byte* startPointer = null,
+            int clusterSize = 16)
+            : base(capacity, keySerializer, valueSerializer, startPointer, clusterSize, false)
+        { }
+
+        public TValue this[TKey key]
+        {
+            get
+            {
+                TValue value;
+                if (TryGetValue(key, out value))
+                    return value;
+                throw new KeyNotFoundException("key not found");
+            }
+
+            set
+            {
+                Set(key, value, true);
+            }
+        }
+
+        public bool Contains(KeyValuePair<TKey, TValue> item)
+        {
+            TValue value;
+            return TryGetValue(item.Key, out value) && item.Value.Equals(value);
+        }
+
+        public bool ContainsKey(TKey key)
+        {
+            return base.Contains(key);
+        }
+
+        public bool Remove(KeyValuePair<TKey, TValue> item)
+        {
+            if (Contains(item))
+                return Remove(item.Key);
+            return false;
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+    }
+
+    public unsafe class PageMultiValueHashTable<TKey, TValue> : PageHashTableBase<TKey, TValue>, ILookup<TKey, TValue>
+    {
+        public PageMultiValueHashTable(
+            int capacity,
+            IPageSerializer<TKey> keySerializer,
+            IPageSerializer<TValue> valueSerializer,
+            byte* startPointer = null,
+            int clusterSize = 32)
+            : base(capacity, keySerializer, valueSerializer, startPointer, clusterSize, true)
+        { }
+
+        public IEnumerable<TValue> this[TKey key]
+        {
+            get
+            {
+                return new Grouping(key, this);
+            }
+        }
+
+        IEnumerator<IGrouping<TKey, TValue>> IEnumerable<IGrouping<TKey, TValue>>.GetEnumerator()
+        {
+            // TODO: performance :)
+            var array = new KeyValuePair<TKey, TValue>[count];
+            CopyTo(array, 0);
+            var group = array.GroupBy(a => a.Key, a => a.Value);
+            return group.GetEnumerator();
+        }
+
+        struct KeyEnumerator : IEnumerator<TValue>
+        {
+            private PageMultiValueHashTable<TKey, TValue> hashtable;
+            private byte* pointer;
+            private byte[] key;
+            private uint keyHash;
+
+            public TValue Current { get; private set; }
+
+            object IEnumerator.Current
+            {
+                get
+                {
+                    return Current;
+                }
+            }
+
+            public void Dispose()
+            {
+                key = null;
+                hashtable = null;
+            }
+
+            public bool MoveNext()
+            {
+                if (pointer == null)
+                {
+                    Reset();
+                    return pointer != null;
+                }
+                int index;
+                fixed (byte* kptr = key)
+                {
+                    index = hashtable.FindNextEntry(kptr, keyHash, ref pointer);
+                }
+
+                if (index >= 0)
+                {
+                    if (hashtable.ValueSerializer != null) Current = hashtable.ValueSerializer.Read(pointer + 1 + hashtable.KeySize);
+                    else Current = GenericPointerHelper.Read<TValue>(pointer + 1 + hashtable.KeySize);
+                    return true;
+                }
+                return false;
+            }
+
+            public void Reset()
+            {
+                fixed (byte* kptr = key)
+                {
+                    hashtable.FindEntry(kptr, keyHash, false, out pointer);
+                    Current = hashtable.ReadValue(pointer + 1 + hashtable.KeySize);
+                }
+            }
+
+            public KeyEnumerator(PageMultiValueHashTable<TKey, TValue> hashtable, byte[] key, uint keyHash)
+            {
+                this.hashtable = hashtable;
+                this.key = key;
+                this.keyHash = keyHash;
+                this.pointer = null;
+                this.Current = default(TValue);
+            }
+        }
+        // TODO: measure struct performance
+        struct Grouping : IGrouping<TKey, TValue>
+        {
+            private PageMultiValueHashTable<TKey, TValue> hashtable;
+            public TKey Key { get; }
+
+            public Grouping(TKey key, PageMultiValueHashTable<TKey, TValue> hashtable)
+            {
+                this.Key = key;
+                this.hashtable = hashtable;
+            }
+
+            public IEnumerator<TValue> GetEnumerator()
+            {
+                // TODO: cache buffer
+                var keyBuffer = new byte[hashtable.KeySize];
+                uint hash;
+                fixed(byte* kptr = keyBuffer)
+                {
+                    hashtable.WriteKey(kptr, Key);
+                    hash = Helper.MurMur.Hash(kptr, hashtable.KeySize, hashtable.Seed);
+                }
+                return new KeyEnumerator(hashtable, keyBuffer, hash);
+            }
+
+            IEnumerator IEnumerable.GetEnumerator()
+            {
+                return GetEnumerator();
+            }
         }
     }
     public unsafe static class PageHashTableHelper
@@ -468,6 +812,16 @@ namespace RaptorDB.Common
             return new PageHashTable<string, string>(count,
                 new StringPageSerializer(keyLength),
                 new StringPageSerializer(valueLength),
+                startPointer);
+        }
+
+        public static PageMultiValueHashTable<TKey, TValue> CreateStructStructMulti<TKey, TValue>(int count, byte* startPointer = null)
+            where TValue : struct
+            where TKey : struct
+        {
+            return new PageMultiValueHashTable<TKey, TValue>(count,
+                //new StructPageSerializer<TKey>(), new StructPageSerializer<TValue>(), 
+                null, null,
                 startPointer);
         }
 

@@ -10,6 +10,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Collections.Concurrent;
 using GenericPointerHelpers;
+using System.Collections;
 
 namespace playground
 {
@@ -18,13 +19,17 @@ namespace playground
         static void Main(string[] args)
         {
             new RRRandom().HackToFaker();
+
+            //TestGrowingArray();
+            //TestGrowingArray();
+
             //TestMemcp(16);
-            TestHashtable();
-            TestHashtable();
-            TestHashtable();
-            TestHashtable();
-            TestHashtable();
-            TestHashtable();
+            TestMultiHashtable();
+            TestMultiHashtable();
+            TestMultiHashtable();
+            TestMultiHashtable();
+            TestMultiHashtable();
+            TestMultiHashtable();
             Console.ReadLine();
             return;
 
@@ -37,11 +42,63 @@ namespace playground
             // rap.Shutdown();
         }
 
+        static void TestGrowingArray()
+        {
+            var sw = Stopwatch.StartNew();
+            var list = new List<int>(1024);
+            for (int i = 0; i < 0x100000; i++)
+            {
+                list.Add(i);
+            }
+            for (int i = 0; i < list.Count; i++)
+            {
+                list[i] *= 2;
+            }
+            Console.WriteLine("list: {0}", sw.Elapsed);
+            sw.Restart();
+            var array = new int[0x100000];
+            var len = array.Length;
+            for (int i = 0; i < 0x100000; i++)
+            {
+                if (i == len) Array.Resize(ref array, array.Length * 2);
+                array[i] = i;
+            }
+            for (int i = 0; i < array.Length; i++)
+            {
+                array[i] *= 2;
+            }
+            Console.WriteLine("array.resize: {0}", sw.Elapsed);
+            sw.Restart();
+            var arrList = new List<int[]>(512);
+            len = 1024;
+            var curArr = new int[len];
+            int index = 0;
+            for (int i = 0; i < 0x100000; i++)
+            {
+                if (curArr.Length == index)
+                {
+                    curArr = new int[len];
+                    arrList.Add(curArr);
+                    index = 0;
+                }
+                curArr[index++] = i;
+            }
+            for (int i1 = 0; i1 < arrList.Count; i1++)
+            {
+                curArr = arrList[i1];
+                for (int i = 0; i < curArr.Length; i++)
+                {
+                    curArr[i] *= 2;
+                }
+            }
+            Console.WriteLine("list<array>: {0}", sw.Elapsed);
+        }
+
         static unsafe void TestHashtable()
         {
             var names = Enumerable.Repeat(0, 100000).Select(i => Guid.NewGuid()).Distinct().ToArray();
             var dictionary = new Dictionary<Guid, int>(190000);
-            var pht = PageHashTableHelper.CreateStructStruct<Guid, int>(100000);
+            var pht = PageHashTableHelper.CreateStructStruct<Guid, int>(12503*16);
             Console.WriteLine("testing");
             var sw = Stopwatch.StartNew();
             foreach (var name in names)
@@ -64,10 +121,67 @@ namespace playground
             sw.Restart();
             foreach (var name in names)
             {
-                pht.Get(name);
+                pht.FirstOrDefault(name);
             }
             Console.WriteLine("PageHashTable read: {0}", sw.Elapsed);
+            HashtableDiagnostic(pht.GetBlockUsageBitmap());
             pht.Dispose();
+        }
+
+        static unsafe void TestMultiHashtable()
+        {
+            var random = new Random();
+            var keys = Enumerable.Repeat(0, 100000).Select(i => random.Next(0, 20000)).ToArray();
+            var dictionary = new Dictionary<int, int>(131072);
+            var pht = PageHashTableHelper.CreateStructStructMulti<int, int>(131072);
+            Console.WriteLine("testing");
+            var sw = Stopwatch.StartNew();
+            for (int i = 0; i < keys.Length; i++)
+            {
+                dictionary[keys[i]] = i;
+            }
+            Console.WriteLine("dictionary write: {0}", sw.Elapsed);
+            sw.Restart();
+            foreach (var name in keys)
+            {
+                var i = dictionary[name];
+            }
+            Console.WriteLine("dictionary read: {0}", sw.Elapsed);
+            sw.Restart();
+            for (int i = 0; i < keys.Length; i++)
+            {
+                pht.Set(keys[i], i);
+            }
+            Console.WriteLine("PageHashTable write: {0}", sw.Elapsed);
+            sw.Restart();
+            foreach (var name in keys)
+            {
+                var i = pht.FirstOrDefault(name);
+            }
+            Console.WriteLine("PageHashTable read: {0}", sw.Elapsed);
+            HashtableDiagnostic(pht.GetBlockUsageBitmap());
+            pht.Dispose();
+        }
+
+        public static void HashtableDiagnostic(BitArray ba)
+        {
+            List<int> clusters = new List<int>();
+            int count = 0;
+            bool value = false;
+            for (int i = 1; i < ba.Count; i++)
+            {
+                var cv = ba.Get(i);
+                if (cv == value) count++;
+                else
+                {
+                    clusters.Add(count);
+                    value = cv;
+                    count = 1;
+                }
+            }
+            Console.WriteLine("max: {0}", clusters.Max());
+            Console.WriteLine("avg: {0}", clusters.Average());
+            File.WriteAllLines("hashtableDiagnostic.txt", clusters.Select(c => c.ToString()));
         }
 
         static unsafe void TestMemcp(uint size)
