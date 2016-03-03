@@ -19,7 +19,7 @@
     <UpgradeBackupLocation>
     </UpgradeBackupLocation>
     <OldToolsVersion>0.0</OldToolsVersion>
-    <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <PublishUrl>publish\</PublishUrl>
     <UpdateEnabled>false</UpdateEnabled>
@@ -53,6 +53,7 @@
     <WarningLevel>4</WarningLevel>
     <DebugType>Full</DebugType>
     <ErrorReport>prompt</ErrorReport>
+    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <OutputPath>bin\Release\</OutputPath>
@@ -97,6 +98,7 @@
     <PlatformTarget>x64</PlatformTarget>
     <ErrorReport>prompt</ErrorReport>
     <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
+    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
     <OutputPath>bin\x64\Release\</OutputPath>
@@ -108,8 +110,13 @@
     <PlatformTarget>x64</PlatformTarget>
     <ErrorReport>prompt</ErrorReport>
     <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
+    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="GenericPointerHelpers, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\GenericPointerHelpers\GenericPointerHelpers.dll</HintPath>
+    </Reference>
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System" />
     <Reference Include="System.XML" />
@@ -126,16 +133,19 @@
     <Compile Include="cron\CronSchedule.cs" />
     <Compile Include="DataTypes\DataTypes.cs" />
     <Compile Include="Global.cs" />
-    <Compile Include="Helper\WAHBitarray2.cs" />
     <Compile Include="Indexes\BitmapIndex.cs" />
     <Compile Include="Indexes\Cache.cs" />
     <Compile Include="Indexes\EnumIndex.cs" />
+    <Compile Include="Indexes\HashIndex.cs" />
     <Compile Include="Indexes\Hoot.cs" />
     <Compile Include="Indexes\IIndex.cs" />
+    <Compile Include="Indexes\IIndexRoot.cs" />
     <Compile Include="Indexes\Indexes.cs" />
     <Compile Include="Indexes\IndexFile.cs" />
-    <Compile Include="Indexes\MemoryMappedIndexFile.cs" />
+    <Compile Include="Indexes\IndexRootFileManager.cs" />
     <Compile Include="Indexes\MGIndex.cs" />
+    <Compile Include="Indexes\MmfTableIndexFileManager.cs" />
+    <Compile Include="Indexes\MMIndex.cs" />
     <Compile Include="Interfaces.cs" />
     <Compile Include="IRaptorDB.cs" />
     <Compile Include="Properties\Resources.Designer.cs">

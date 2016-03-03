@@ -9,14 +9,14 @@ using System.Runtime.InteropServices;
 namespace RaptorDB
 {
     #region [  TypeIndexes  ]
-    public class TypeIndexes<T> : MGIndex<T>, IIndex where T : IComparable<T>
+    public class TypeIndexes<T> : MGIndex<T>, IComparisonIndex<T> where T : IComparable<T>
     {
-    	public TypeIndexes(string path, string filename, byte keysize)
+        public TypeIndexes(string path, string filename, byte keysize)
             : base(path, filename + ".mgidx", keysize, Global.PageItemCount, true)
         {
 
         }
-    	public TypeIndexes(string path, string filename, byte keysize, bool allowDups)
+        public TypeIndexes(string path, string filename, byte keysize, bool allowDups)
             : base(path, filename + ".mgidx", keysize, Global.PageItemCount, allowDups)
         {
 
@@ -29,65 +29,21 @@ namespace RaptorDB
             base.Set((T)key, recnum);
         }
 
-        public WAHBitArray Query(RDBExpression ex, object from, int maxsize)
-        {
-            T f = default(T);
-            if (typeof(T).Equals(from.GetType()) == false)
-                f = Converter(from);
-            else
-                f = (T)from;
-
-            return base.Query(ex, f, maxsize);
-        }
-
-        private T Converter(object from)
-        {
-            if (typeof(T) == typeof(Guid))
-            {
-                object o = new Guid(from.ToString());
-                return (T)o;
-            }
-            else
-                return (T)Convert.ChangeType(from, typeof(T));
-        }
-
         void IIndex.FreeMemory()
         {
             base.FreeMemory();
             base.SaveIndex();
         }
 
-        void IIndex.Shutdown()
+        public TResult Accept<TResult>(IIndexAcceptable<TResult> acc)
         {
-            base.SaveIndex();
-            base.Shutdown();
+            return acc.Accept(this);
         }
-
-        object[] IIndex.GetKeys()
-        {
-            return base.GetKeys();
-        }
-        //public WAHBitArray Query(object fromkey, object tokey, int maxsize)
-        //{
-        //    T f = default(T);
-        //    if (typeof(T).Equals(fromkey.GetType()) == false)
-        //        f = (T)Convert.ChangeType(fromkey, typeof(T));
-        //    else
-        //        f = (T)fromkey;
-
-        //    T t = default(T);
-        //    if (typeof(T).Equals(tokey.GetType()) == false)
-        //        t = (T)Convert.ChangeType(tokey, typeof(T));
-        //    else
-        //        t = (T)tokey;
-
-        //    return base.Query(f, t, maxsize);
-        //}
     }
     #endregion
 
     #region [  BoolIndex  ]
-    public class BoolIndex : IIndex
+    public class BoolIndex : IEqualsQueryIndex<bool>
     {
         public BoolIndex(string path, string filename, string extension)
         {
@@ -101,34 +57,18 @@ namespace RaptorDB
                 ReadFile();
         }
 
-        private WAHBitArray _bits = new WAHBitArray();
+        private WahBitArray _bits = new WahBitArray();
         private string _filename;
         private string _path;
         private object _lock = new object();
+
+        public bool AllowsDuplicates => true;
+
         //private bool _inMemory = false;
 
-        public WAHBitArray GetBits()
+        public WahBitArray GetBits()
         {
             return _bits.Copy();
-        }
-
-        public void Set(object key, int recnum)
-        {
-            lock (_lock)
-                if (key != null)
-                    _bits.Set(recnum, (bool)key);
-        }
-
-        public WAHBitArray Query(RDBExpression ex, object from, int maxsize)
-        {
-            lock (_lock)
-            {
-                bool b = (bool)from;
-                if (b)
-                    return _bits;
-                else
-                    return _bits.Not(maxsize);
-            }
         }
 
         public void FreeMemory()
@@ -142,7 +82,7 @@ namespace RaptorDB
             }
         }
 
-        public void Shutdown()
+        public void Dispose()
         {
             // shutdown
             //if (_inMemory == false)
@@ -155,7 +95,7 @@ namespace RaptorDB
             WriteFile();
         }
 
-        public void InPlaceOR(WAHBitArray left)
+        public void InPlaceOR(WahBitArray left)
         {
             lock (_lock)
                 _bits = _bits.Or(left);
@@ -165,7 +105,7 @@ namespace RaptorDB
         {
             lock (_lock)
             {
-                WAHBitArray.TYPE t;
+                WahBitArrayState t;
                 uint[] ints = _bits.GetCompressed(out t);
                 MemoryStream ms = new MemoryStream();
                 BinaryWriter bw = new BinaryWriter(ms);
@@ -181,11 +121,11 @@ namespace RaptorDB
         private void ReadFile()
         {
             byte[] b = File.ReadAllBytes(_path + _filename);
-            WAHBitArray.TYPE t = WAHBitArray.TYPE.WAH;
+            WahBitArrayState t = WahBitArrayState.Wah;
             int j = 0;
             if (b.Length % 4 > 0) // new format with the data type byte
             {
-                t = (WAHBitArray.TYPE)Enum.ToObject(typeof(WAHBitArray.TYPE), b[0]);
+                t = (WahBitArrayState)Enum.ToObject(typeof(WahBitArrayState), b[0]);
                 j = 1;
             }
             List<uint> ints = new List<uint>();
@@ -193,57 +133,49 @@ namespace RaptorDB
             {
                 ints.Add((uint)Helper.ToInt32(b, (i * 4) + j));
             }
-            _bits = new WAHBitArray(t, ints.ToArray());
+            _bits = new WahBitArray(t, ints.ToArray());
         }
 
-        public WAHBitArray Query(object fromkey, object tokey, int maxsize)
+        public WahBitArray QueryEquals(bool key)
         {
-            return Query(RDBExpression.Greater, fromkey, maxsize);
+            if (key)
+                return _bits;
+            else return _bits.Not();
         }
 
-        internal void FixSize(int size)
+        public WahBitArray QueryNotEquals(bool key)
         {
-            _bits.Length = size;
+            return QueryEquals(!key);
         }
 
-        public object[] GetKeys()
+        public void Set(bool key, int recnum)
         {
-            return new object[] { true, false };
+            lock (_lock)
+                _bits.Set(recnum, key);
+        }
+
+        public bool[] GetKeys()
+            => new[] { true, false };
+
+        public TResult Accept<TResult>(IIndexAcceptable<TResult> acc)
+            => acc.Accept(this);
+
+        void IIndex.Set(object key, int recnum)
+            => Set((bool)key, recnum);
+
+        public bool GetFirst(bool key, out int idx)
+        {
+            throw new NotImplementedException();
         }
     }
     #endregion
 
 
-    internal class ObjectToStringIndex<T> : MGIndex<string>, IIndex
+    internal class ObjectToStringIndex<T> : MGIndex<string>, IComparisonIndex<T>
     {
         public ObjectToStringIndex(string path, string filename, byte maxLength)
             : base(path, filename + ".mgidx", maxLength, Global.PageItemCount, true)
         {
-        }
-
-        public void Set(object key, int recnum)
-        {
-            if (key == null) return;
-            base.Set(key.ToString(), recnum);
-        }
-
-        public WAHBitArray Query(RDBExpression ex, object from, int maxsize)
-        {
-            if (!typeof(T).Equals(from.GetType()))
-                from = Converter(from);
-
-            return base.Query(ex, from.ToString(), maxsize);
-        }
-
-        private T Converter(object from)
-        {
-            if (typeof(T) == typeof(Guid))
-            {
-                object o = new Guid(from.ToString());
-                return (T)o;
-            }
-            else
-                return (T)Convert.ChangeType(from, typeof(T));
         }
 
         void IIndex.FreeMemory()
@@ -252,31 +184,51 @@ namespace RaptorDB
             base.SaveIndex();
         }
 
-        void IIndex.Shutdown()
+        public WahBitArray QueryGreater(T key)
+            => QueryGreater(key.ToString());
+
+        public WahBitArray QueryGreaterEquals(T key)
+            => QueryGreaterEquals(key.ToString());
+
+        public WahBitArray QueryLess(T key)
+            => QueryLess(key.ToString());
+
+        public WahBitArray QueryLessEquals(T key)
+            => QueryLessEquals(key.ToString());
+
+        public WahBitArray QueryEquals(T key)
+            => QueryEquals(key.ToString());
+
+        public WahBitArray QueryNotEquals(T key)
+            => QueryNotEquals(key.ToString());
+
+        public void Set(T key, int recnum)
         {
-            base.SaveIndex();
-            base.Shutdown();
+            if (key != null)
+            {
+                base.Set(key.ToString(), recnum);
+            }
         }
 
-        public WAHBitArray Query(object fromkey, object tokey, int maxsize)
+        T[] IIndex<T>.GetKeys()
         {
-            if (typeof(T).Equals(fromkey.GetType()) == false)
-                fromkey = Convert.ChangeType(fromkey, typeof(T));
-
-            if (typeof(T).Equals(tokey.GetType()) == false)
-                tokey = Convert.ChangeType(tokey, typeof(T));
-
-            return base.Query(fromkey.ToString(), tokey.ToString(), maxsize);
+            throw new NotSupportedException("ObjectToStringIndex can't rebuild keys from stored strings");
         }
 
-        object[] IIndex.GetKeys()
+        public TResult Accept<TResult>(IIndexAcceptable<TResult> acc)
+            => acc.Accept(this);
+
+        public void Set(object key, int recnum)
+            => Set((T)key, recnum);
+
+        public bool GetFirst(T key, out int idx)
         {
-            return base.GetKeys();
+            return base.GetFirst(key.ToString(), out idx);
         }
     }
 
     #region [  FullTextIndex  ]
-    internal class FullTextIndex : Hoot, IIndex
+    internal class FullTextIndex : Hoot, IContainsIndex<string>
     {
         public FullTextIndex(string IndexPath, string FileName, bool docmode, bool sortable)
             : base(IndexPath, FileName, docmode)
@@ -288,18 +240,15 @@ namespace RaptorDB
             }
         }
         private bool _sortable = false;
-        private IIndex _idx;
+        private IIndex<string> _idx;
 
-        public void Set(object key, int recnum)
+        public bool AllowsDuplicates => true;
+
+        public void Set(string key, int recnum)
         {
-            base.Index(recnum, (string)key);
+            base.Index(recnum, key);
             if (_sortable)
-                _idx.Set(key, recnum); 
-        }
-
-        public WAHBitArray Query(RDBExpression ex, object from, int maxsize)
-        {
-            return base.Query(from.ToString(), maxsize);
+                _idx.Set(key, recnum);
         }
 
         public void SaveIndex()
@@ -309,17 +258,12 @@ namespace RaptorDB
                 _idx.SaveIndex();
         }
 
-        public WAHBitArray Query(object fromkey, object tokey, int maxsize)
-        {
-            return base.Query(fromkey.ToString(), maxsize);
-        }
-
-        public object[] GetKeys()
+        public string[] GetKeys()
         {
             if (_sortable)
                 return _idx.GetKeys(); // support get keys 
             else
-                return new object[] { }; 
+                return new string[] { };
         }
         void IIndex.FreeMemory()
         {
@@ -328,29 +272,32 @@ namespace RaptorDB
             this.SaveIndex();
         }
 
-        void IIndex.Shutdown()
+        public override void Dispose()
         {
             this.SaveIndex();
-            base.Shutdown();
-            if (_sortable)
-                _idx.Shutdown();
+            base.Dispose();
+            if (_sortable) _idx.Dispose();
         }
-        
+
+        public TResult Accept<TResult>(IIndexAcceptable<TResult> acc)
+            => acc.Accept(this);
+
+        public WahBitArray QueryContains(string value)
+        {
+            return base.Query(value);
+        }
+
+        public void Set(object key, int recnum)
+            => Set((string)key, recnum);
     }
     #endregion
 
     #region [  NoIndex  ]
-    internal class NoIndex : IIndex
+    internal class NoIndex : IIndex<object>
     {
         public void Set(object key, int recnum)
         {
             // ignore set
-        }
-
-        public WAHBitArray Query(RDBExpression ex, object from, int maxsize)
-        {
-            // always return everything
-            return WAHBitArray.Fill(maxsize);
         }
 
         public void FreeMemory()
@@ -358,7 +305,7 @@ namespace RaptorDB
 
         }
 
-        public void Shutdown()
+        public void Dispose()
         {
 
         }
@@ -373,7 +320,12 @@ namespace RaptorDB
             return new object[] { };
         }
 
+        public TResult Accept<TResult>(IIndexAcceptable<TResult> acc)
+            => acc.Accept(this);
+
         public static readonly NoIndex Instance = new NoIndex();
+
+        public bool AllowsDuplicates => true;
     }
     #endregion
 }

@@ -4,13 +4,14 @@ using System.Linq;
 using System.Text;
 using System.Linq.Expressions;
 using System.Reflection;
+using RaptorDB.Common;
 
 namespace RaptorDB.Views
 {
     //FEATURE : handle Contains, StartsWith, Between predicates
 
-    delegate WAHBitArray QueryFromTo(string colname, object from, object to);
-    delegate WAHBitArray QueryExpression(string colname, RDBExpression exp, object from);
+    delegate WahBitArray QueryFromTo(string colname, object from, object to);
+    delegate WahBitArray QueryExpression(string colname, RDBExpression exp, object from);
 
     internal class QueryVisitor : ExpressionVisitor
     {
@@ -64,8 +65,8 @@ namespace RaptorDB.Views
                 if (_bitmap.Count > 1)
                 {
                     // do bitmap operations 
-                    WAHBitArray r = (WAHBitArray)_bitmap.Pop();
-                    WAHBitArray l = (WAHBitArray)_bitmap.Pop();
+                    WahBitArray r = (WahBitArray)_bitmap.Pop();
+                    WahBitArray l = (WahBitArray)_bitmap.Pop();
 
                     if (t == ExpressionType.And || t == ExpressionType.AndAlso)
                         _bitmap.Push(r.And(l));

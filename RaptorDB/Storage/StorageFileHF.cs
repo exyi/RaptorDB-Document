@@ -14,7 +14,7 @@ namespace RaptorDB
     internal class StorageFileHF
     {
         FileStream _datawrite;
-        WAHBitArray _freeList;
+        WahBitArray _freeList;
 
         private string _filename = "";
         private object _readlock = new object();
@@ -84,7 +84,7 @@ namespace RaptorDB
             // get the first free block or append to the end
             if (_freeList.CountOnes() > 0)
             {
-                int i = _freeList.GetFirst();
+                int i = _freeList.GetFirstIndex();
                 _freeList.Set(i, false);
                 return i;
             }
@@ -107,7 +107,7 @@ namespace RaptorDB
 
         private void WriteFreeListBMPFile(string filename)
         {
-            WAHBitArray.TYPE t;
+            WahBitArrayState t;
             uint[] ints = _freeList.GetCompressed(out t);
             MemoryStream ms = new MemoryStream();
             BinaryWriter bw = new BinaryWriter(ms);
@@ -122,11 +122,11 @@ namespace RaptorDB
         private void ReadFreeListBMPFile(string filename)
         {
             byte[] b = File.ReadAllBytes(filename);
-            WAHBitArray.TYPE t = WAHBitArray.TYPE.WAH;
+            WahBitArrayState t = WahBitArrayState.Wah;
             int j = 0;
             if (b.Length % 4 > 0) // new format with the data type byte
             {
-                t = (WAHBitArray.TYPE)Enum.ToObject(typeof(WAHBitArray.TYPE), b[0]);
+                t = (WahBitArrayState)Enum.ToObject(typeof(WahBitArrayState), b[0]);
                 j = 1;
             }
             List<uint> ints = new List<uint>();
@@ -134,7 +134,7 @@ namespace RaptorDB
             {
                 ints.Add((uint)Helper.ToInt32(b, (i * 4) + j));
             }
-            _freeList = new WAHBitArray(t, ints.ToArray());
+            _freeList = new WahBitArray(t, ints.ToArray());
         }
 
         private void Initialize(string filename, ushort blocksize)
@@ -157,7 +157,7 @@ namespace RaptorDB
                 _lastBlockNumber = (int)((_datawrite.Length - _fileheader.Length) / _BLOCKSIZE);
                 _lastBlockNumber++;
             }
-            _freeList = new WAHBitArray();
+            _freeList = new WahBitArray();
             if (File.Exists(_Path + _filename + ".free"))
             {
                 ReadFreeListBMPFile(_Path + _filename + ".free");

@@ -1,4 +1,5 @@
 ﻿using RaptorDB;
+using RaptorDB.Common;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -14,10 +15,11 @@ namespace playground
         public string WebSite { get; set; }
         public Guid Id { get; set; }
         public string[] Friends { get; set; }
-    
-	    public ModelItem(){
-	    	 Friends= new string[0];
-	    }
+
+        public ModelItem()
+        {
+            Friends = new string[0];
+        }
     }
 
     public class OtherItem
@@ -43,7 +45,8 @@ namespace playground
             // // uncomment the following for transaction mode
             //this.TransactionMode = true;
 
-            this.SetStringIndex(s => s.Name, 255, true);
+            this.SetStringIndex(s => s.Name, length: 255);
+            //this.SetMMIndex(s => s.Name, keySerializer: new PageHashTableHelper.StringPageSerializer(255));
 
             this.Mapper = (api, docid, doc) =>
             {
@@ -75,6 +78,7 @@ namespace playground
             //this.TransactionMode = true;
 
             this.SetStringIndex(s => s.Name, ignoreCase: true);
+            this.SetMMIndex(s => s.Number);
 
             this.Mapper = (api, docid, doc) =>
             {

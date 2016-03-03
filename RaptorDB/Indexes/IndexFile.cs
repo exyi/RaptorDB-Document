@@ -109,7 +109,7 @@ namespace RaptorDB
             return GetDuplicateBitmap(recno).GetBitIndexes();
         }
 
-        public WAHBitArray GetDuplicateBitmap(int recno)
+        public WahBitArray GetDuplicateBitmap(int recno)
         {
             return _bitmap.GetBitmap(recno);
         }

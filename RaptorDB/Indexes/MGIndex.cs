@@ -61,7 +61,8 @@ namespace RaptorDB
 
     #endregion
 
-    public class MGIndex<T> where T : IComparable<T>
+    public class MGIndex<T> : IDisposable
+        where T : IComparable<T>
     {
         ILog _log = LogManager.GetLogger(typeof(MGIndex<T>));
         private SortedList<T, PageInfo> _pageList = new SortedList<T, PageInfo>();
@@ -69,6 +70,7 @@ namespace RaptorDB
         //private SafeDictionary<int, CacheTimeOut> _usage = new SafeDictionary<int, CacheTimeOut>();
         private List<int> _pageListDiskPages = new List<int>();
         private IndexFile<T> _index;
+        public bool AllowsDuplicates => _AllowDuplicates;
         private bool _AllowDuplicates = true;
         private int _LastIndexedRecordNumber = 0;
         private int _maxPageItems = 0;
@@ -105,58 +107,6 @@ namespace RaptorDB
         public int GetLastIndexedRecordNumber()
         {
             return _LastIndexedRecordNumber;
-        }
-
-        public WAHBitArray Query(T from, T to, int maxsize)
-        {
-            // TODO : add BETWEEN code here
-            T temp = default(T);
-            if (from.CompareTo(to) > 0) // check values order
-            {
-                temp = from;
-                from = to;
-                to = temp;
-            }
-            // find first page and do > than
-            bool found = false;
-            int startpos = FindPageOrLowerPosition(from, ref found);
-
-            // find last page and do < than
-            int endpos = FindPageOrLowerPosition(to, ref found);
-
-            // do all pages in between
-
-            throw new NotImplementedException();
-        }
-
-        public WAHBitArray Query(RDBExpression exp, T from, int maxsize)
-        {
-            T key = from;
-            if (exp == RDBExpression.Equal || exp == RDBExpression.NotEqual)
-                return doEqualOp(exp, key, maxsize);
-
-            // TODO : optimize complement search if page count less for the complement pages
-            //bool found = false;
-            //int last = _pageList.Count - 1;
-            //int pos = FindPageOrLowerPosition(key, ref found);
-
-            if (exp == RDBExpression.Less || exp == RDBExpression.LessEqual)
-            {
-                //long c = (pos+1) * _maxPageItems * 70 / 100; // 70% full pages
-                //long inv = maxsize - c;
-                //if (c < inv)
-                return doLessOp(exp, key);
-                //else
-                //{
-
-                //}
-            }
-            else if (exp == RDBExpression.Greater || exp == RDBExpression.GreaterEqual)
-            {
-                return doMoreOp(exp, key);
-            }
-
-            return new WAHBitArray(); // blank results 
         }
 
         private object _setlock = new object();
@@ -202,7 +152,7 @@ namespace RaptorDB
                 SplitPage(page.DiskPageNumber);
         }
 
-        public bool Get(T key, out int val)
+        public bool GetFirst(T key, out int val)
         {
             using (_listLock.Reading())
             {
@@ -240,7 +190,7 @@ namespace RaptorDB
             }
         }
 
-        public void Shutdown()
+        public virtual void Dispose()
         {
             using (_listLock.Writing())
             {
@@ -318,13 +268,13 @@ namespace RaptorDB
         }
 
         #region [  P R I V A T E  ]
-        private WAHBitArray doMoreOp(RDBExpression exp, T key)
+        protected WahBitArray doMoreOp(T key, bool eq)
         {
             using (_listLock.Reading())
             {
                 bool found = false;
                 int pos = FindPageOrLowerPosition(key, ref found);
-                WAHBitArray result = new WAHBitArray();
+                WahBitArray result = new WahBitArray();
                 if (pos < _pageList.Count)
                 {
                     // all the pages after
@@ -345,12 +295,13 @@ namespace RaptorDB
                     for (int i = pos; i < keys.Length; i++)
                     {
                         T k = keys[i];
+                        var comp = k.CompareTo(key);
                         int bn = page.tree[k].DuplicateBitmapNumber;
 
-                        if (k.CompareTo(key) > 0)
+                        if (comp > 0)
                             result = result.Or(_index.GetDuplicateBitmap(bn));
 
-                        if (exp == RDBExpression.GreaterEqual && k.CompareTo(key) == 0)
+                        if (eq && comp == 0)
                             result = result.Or(_index.GetDuplicateBitmap(bn));
                     }
                 }
@@ -358,13 +309,13 @@ namespace RaptorDB
             }
         }
 
-        private WAHBitArray doLessOp(RDBExpression exp, T key)
+        protected WahBitArray doLessOp(T key, bool eq)
         {
             using (_listLock.Reading())
             {
                 bool found = false;
                 int pos = FindPageOrLowerPosition(key, ref found);
-                WAHBitArray result = new WAHBitArray();
+                WahBitArray result = new WahBitArray();
                 if (pos > 0)
                 {
                     // all the pages before
@@ -380,14 +331,15 @@ namespace RaptorDB
                     for (int i = 0; i < keys.Length; i++)
                     {
                         T k = keys[i];
-                        if (k.CompareTo(key) > 0)
+                        var comp = k.CompareTo(key);
+                        if (comp > 0)
                             break;
                         int bn = page.tree[k].DuplicateBitmapNumber;
 
-                        if (k.CompareTo(key) < 0)
+                        if (comp < 0)
                             result = result.Or(_index.GetDuplicateBitmap(bn));
 
-                        if (exp == RDBExpression.LessEqual && k.CompareTo(key) == 0)
+                        if (eq && comp == 0)
                             result = result.Or(_index.GetDuplicateBitmap(bn));
                     }
                 }
@@ -395,7 +347,19 @@ namespace RaptorDB
             }
         }
 
-        private WAHBitArray doEqualOp(RDBExpression exp, T key, int maxsize)
+        public WahBitArray QueryGreater(T key)
+            => doMoreOp(key, false);
+
+        public WahBitArray QueryGreaterEquals(T key)
+            => doMoreOp(key, true);
+
+        public WahBitArray QueryLess(T key)
+            => doMoreOp(key, false);
+
+        public WahBitArray QueryLessEquals(T key)
+            => doMoreOp(key, true);
+
+        public WahBitArray QueryEquals(T key)
         {
             using (_listLock.Reading())
             {
@@ -406,17 +370,19 @@ namespace RaptorDB
                 {
                     int bn = k.DuplicateBitmapNumber;
 
-                    if (exp == RDBExpression.Equal)
-                        return _index.GetDuplicateBitmap(bn);
-                    else
-                        return _index.GetDuplicateBitmap(bn).Not(maxsize);
+                    return _index.GetDuplicateBitmap(bn);
                 }
                 else
-                    return new WAHBitArray();
+                    return new WahBitArray();
             }
         }
 
-        private void doPageOperation(ref WAHBitArray res, int pageidx)
+        public WahBitArray QueryNotEquals(T key)
+        {
+            return QueryEquals(key).Not();
+        }
+
+        private void doPageOperation(ref WahBitArray res, int pageidx)
         {
             Page<T> page = LoadPage(_pageList.Values[pageidx].PageNumber);
             using (page.rwlock.Reading())
@@ -559,11 +525,11 @@ namespace RaptorDB
         }
         #endregion
 
-        internal object[] GetKeys()
+        public T[] GetKeys()
         {
             using (_listLock.Reading())
             {
-                List<object> keys = new List<object>();
+                var keys = new List<T>();
                 for (int i = 0; i < _pageList.Count; i++)
                 {
                     Page<T> page = LoadPage(_pageList.Values[i].PageNumber);

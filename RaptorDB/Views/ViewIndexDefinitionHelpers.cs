@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using RaptorDB.Common;
 using RaptorDB.Views;
+using System.Runtime.InteropServices;
 
 namespace RaptorDB
 {
@@ -39,6 +40,21 @@ namespace RaptorDB
             view.IndexDefinitions[name] = new MGIndexColumnDefinition<TProp>(length);
         }
 
+        public static void SetMMIndex<TDoc, TSchema, TProp>(
+            this View<TDoc, TSchema> view,
+            System.Linq.Expressions.Expression<Func<TSchema, TProp>> selector,
+            int pageSize = 8192,
+            IPageSerializer<TProp> keySerializer = null)
+            where TProp: IComparable<TProp>
+        {
+            var name = ExpressionHelper.GetPropertyName(selector);
+            view.IndexDefinitions[name] = new MMIndexColumnDefinition<TProp>()
+            {
+                PageSize = pageSize,
+                KeySerializer = keySerializer
+            };
+        }
+
         public static void SetFullTextIndex<TDoc, TSchema>(
                 this View<TDoc, TSchema> view,
                 System.Linq.Expressions.Expression<Func<TSchema, string>> selector)
@@ -56,12 +72,29 @@ namespace RaptorDB
             view.IndexDefinitions[name] = new EnumIndexColumnDefinition<TProp>();
         }
 
+        public static void SetHashIndex<TDoc, TSchema, TProp>(
+            this View<TDoc, TSchema> view,
+            System.Linq.Expressions.Expression<Func<TSchema, TProp>> selector,
+            long defaultSize = 4096,
+            IPageSerializer<TProp> serializer = null)
+        {
+            var name = ExpressionHelper.GetPropertyName(selector);
+            view.IndexDefinitions[name] = new HashIndexColumnDefinition<TProp>() { DefaultSize = defaultSize, KeySerializer = serializer };
+        }
+
         public static void SetNoIndexing<TDoc, TSchema, TProp>(
             this View<TDoc, TSchema> view,
             System.Linq.Expressions.Expression<Func<TSchema, TProp>> selector)
         {
             var name = ExpressionHelper.GetPropertyName(selector);
             view.IndexDefinitions[name] = new NoIndexColumnDefinition();
+        }
+
+        public static IViewColumnIndexDefinition<T> GetDefaultForType<T>(bool allowDups = true)
+        {
+            if (typeof(T).IsValueType)
+                return Activator.CreateInstance(typeof(MMIndexColumnDefinition<>).MakeGenericType(typeof(T)), new object[] { }) as IViewColumnIndexDefinition<T>;
+            throw new NotImplementedException();
         }
     }
 }

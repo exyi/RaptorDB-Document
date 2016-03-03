@@ -1,11 +1,12 @@
-﻿using System;
+﻿using RaptorDB.Common;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
 namespace RaptorDB.Indexes
 {
-    internal class EnumIntIndex<T> : MGIndex<int>, IIndex where T : struct, IConvertible
+    internal class EnumIntIndex<T> : MGIndex<int>, IEqualsQueryIndex<T> where T : struct, IConvertible
     {
         public EnumIntIndex(string path, string filename)
             : base(path, filename + ".mgidx", 4, Global.PageItemCount, true)
@@ -17,52 +18,39 @@ namespace RaptorDB.Indexes
             if (key == null) return;
             base.Set((int)key, recnum);
         }
-
-        public WAHBitArray Query(RDBExpression ex, object from, int maxsize)
-        {
-            if (!typeof(T).Equals(from.GetType()))
-                from = Converter(from);
-
-            return base.Query(ex, (int)from, maxsize);
-        }
-
-        private T Converter(object from)
-        {
-            if (typeof(T) == typeof(Guid))
-            {
-                object o = new Guid(from.ToString());
-                return (T)o;
-            }
-            else
-                return (T)Convert.ChangeType(from, typeof(T));
-        }
-
         void IIndex.FreeMemory()
         {
             base.FreeMemory();
             base.SaveIndex();
         }
 
-        void IIndex.Shutdown()
+        public override void Dispose()
         {
             base.SaveIndex();
-            base.Shutdown();
+            base.Dispose();
         }
 
-        public WAHBitArray Query(object fromkey, object tokey, int maxsize)
+        T[] IIndex<T>.GetKeys()
         {
-            if (typeof(T).Equals(fromkey.GetType()) == false)
-                fromkey = Convert.ChangeType(fromkey, typeof(T));
-
-            if (typeof(T).Equals(tokey.GetType()) == false)
-                tokey = Convert.ChangeType(tokey, typeof(T));
-
-            return base.Query((int)fromkey, (int)tokey, maxsize);
+            throw new NotImplementedException("enum is not sortable");
         }
 
-        object[] IIndex.GetKeys()
+        public TResult Accept<TResult>(IIndexAcceptable<TResult> acc)
+            => acc.Accept(this);
+        public void Set(T key, int recnum)
         {
-            return base.GetKeys();
+            base.Set((int)(object)key, recnum);
+        }
+
+        public WahBitArray QueryEquals(T key)
+            => QueryEquals((int)(object)key);
+
+        public WahBitArray QueryNotEquals(T key)
+            => QueryNotEquals((int)(object)key);
+
+        public bool GetFirst(T key, out int idx)
+        {
+            return base.GetFirst((int)(object)key, out idx);
         }
     }
 }

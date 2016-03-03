@@ -532,7 +532,7 @@ namespace RaptorDB
         /// </summary>
         /// <param name="docid"></param>
         /// <returns></returns>
-        public int[] FetchHistory(Guid docid)
+        public IEnumerable<int> FetchHistory(Guid docid)
         {
             Packet p = CreatePacket();
             p.Command = PacketCommand.DocHistory;
@@ -546,7 +546,7 @@ namespace RaptorDB
         /// </summary>
         /// <param name="fileid"></param>
         /// <returns></returns>
-        public int[] FetchBytesHistory(Guid fileid)
+        public IEnumerable<int> FetchBytesHistory(Guid fileid)
         {
             Packet p = CreatePacket();
             p.Command = PacketCommand.FileHistory;

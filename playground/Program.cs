@@ -11,6 +11,7 @@ using System.Threading;
 using System.Collections.Concurrent;
 using GenericPointerHelpers;
 using System.Collections;
+using System.Runtime.CompilerServices;
 
 namespace playground
 {
@@ -20,18 +21,42 @@ namespace playground
         {
             new RRRandom().HackToFaker();
 
+            GphTest();
+
+            //Console.WriteLine(GenericPointerHelper.SuperCoder_Decode("\f"));
+            //while(true)
+            //{
+            //    var line = Console.ReadLine();
+            //    while(line.EndsWith("\\"))
+            //    {
+            //        line = line.Remove(line.Length - 1) + Console.ReadLine();
+            //    }
+            //    string str;
+            //    if (line.StartsWith("."))
+            //    {
+            //        str = line.Remove(0, 1);
+            //    }
+            //    else
+            //    {
+            //        var bytes = StringToByteArray(line);
+            //        str = Encoding.Unicode.GetString(bytes);
+            //    }
+            //    Console.WriteLine("\"{0}\"", str);
+            //    Console.WriteLine("\"{0}\"", GenericPointerHelper.SuperCoder_Decode(str));
+            //}
+
             //TestGrowingArray();
             //TestGrowingArray();
 
             //TestMemcp(16);
-            TestMultiHashtable();
-            TestMultiHashtable();
-            TestMultiHashtable();
-            TestMultiHashtable();
-            TestMultiHashtable();
-            TestMultiHashtable();
-            Console.ReadLine();
-            return;
+            //TestMultiHashtable();
+            //TestMultiHashtable();
+            //TestMultiHashtable();
+            //TestMultiHashtable();
+            //TestMultiHashtable();
+            //TestMultiHashtable();
+            //Console.ReadLine();
+            //return;
 
             Console.WriteLine("opening db");
             var rap = OpenDB();
@@ -40,6 +65,67 @@ namespace playground
 
             QueryTest(rap);
             // rap.Shutdown();
+        }
+
+        public unsafe static void GphTest()
+        {
+            var array = new byte[] { 1, 1, 0, 1, 0x12 };
+            fixed (byte* ptr = array)
+            {
+                var i = 654;
+                var ptr1 = &i;
+                var ptr2 = GenericPointerHelper.AddrOf(ref i);
+                Console.WriteLine();
+
+
+                //var read = GenericPointerHelper.Read<string>(ptr);
+                //var sw = Stopwatch.StartNew();
+                //int result;
+                //for (int i = 0; i < 10000000; i++)
+                //{
+                //    result = GenericPointerHelper.Read<int>(ptr);
+                //}
+                //Console.WriteLine(sw.Elapsed);
+                //sw.Restart();
+                //for (int i = 0; i < 10000000; i++)
+                //{
+                //    result = GenericPointerHelper.ReadLimited<int>(ptr, 1);
+                //}
+                //Console.WriteLine(sw.Elapsed);
+                //sw.Restart();
+                //for (int i = 0; i < 10000000; i++)
+                //{
+                //    if (i > 0)
+                //    {
+                //        result = GenericPointerHelper.Read<int>(ptr);
+                //    }
+                //    else result = GenericPointerHelper.ReadLimited<int>(ptr, 4);
+                //}
+                //Console.WriteLine(sw.Elapsed);
+                //sw.Restart();
+                //for (int i = 0; i < 10000000; i++)
+                //{
+                //    result = BitConverter.ToInt32(array, 0);
+                //}
+                //Console.WriteLine(sw.Elapsed);
+            }
+            Console.ReadLine();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static T Test<T>(ref int p)
+        {
+            var def = default(T);
+            return def;
+        }
+
+        public static byte[] StringToByteArray(string hex)
+        {
+            hex = hex.Replace(" ", "");
+            return Enumerable.Range(0, hex.Length)
+                             .Where(x => x % 2 == 0)
+                             .Select(x => Convert.ToByte(hex.Substring(x, 2), 16))
+                             .ToArray();
         }
 
         static void TestGrowingArray()
@@ -98,7 +184,7 @@ namespace playground
         {
             var names = Enumerable.Repeat(0, 100000).Select(i => Guid.NewGuid()).Distinct().ToArray();
             var dictionary = new Dictionary<Guid, int>(190000);
-            var pht = PageHashTableHelper.CreateStructStruct<Guid, int>(12503*16);
+            var pht = PageHashTableHelper.CreateStructStruct<Guid, int>(12503 * 16);
             Console.WriteLine("testing");
             var sw = Stopwatch.StartNew();
             foreach (var name in names)
@@ -328,12 +414,12 @@ namespace playground
             var items = GenerateItems(count);
             var sw = Stopwatch.StartNew();
             Console.WriteLine("inserting items");
-            Parallel.ForEach(items, new ParallelOptions() { MaxDegreeOfParallelism = 8 }, item =>
+            Parallel.ForEach(items, new ParallelOptions() { MaxDegreeOfParallelism = 1 }, item =>
             //foreach(var item in items)
             {
-                Interlocked.Increment(ref i);
+                var j = Interlocked.Increment(ref i);
                 rap.Save(item.Id, item);
-                if (i % 500 == 0) Console.WriteLine("{0} items inserted in {1:N1}s", i, sw.ElapsedMilliseconds / 1000.0);
+                if (j % 500 == 0) Console.WriteLine("{0} items inserted in {1:N1}s", j, sw.ElapsedMilliseconds / 1000.0);
             });
         }
 

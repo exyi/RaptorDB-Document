@@ -67,6 +67,7 @@ namespace RaptorDB.Views
         protected ILog _log = LogManager.GetLogger(typeof(ViewHandler<TDoc, TSchema>));
         protected string _path;
         protected ViewManager _viewmanager;
+        protected IEqualsQueryIndex<Guid> idIndex;
         protected Dictionary<string, IIndex> _indexes = new Dictionary<string, IIndex>();
         protected StorageFile<Guid> _viewData;
         protected BoolIndex _deletedRows;
@@ -374,7 +375,7 @@ namespace RaptorDB.Views
             QueryVisitor qv = new QueryVisitor(QueryColumnExpression);
             qv.Visit(filter);
             var delbits = _deletedRows.GetBits();
-            var ba = ((WAHBitArray)qv._bitmap.Pop()).AndNot(delbits);
+            var ba = ((WahBitArray)qv._bitmap.Pop()).AndNot(delbits);
             List<TSchema> trows = null;
             if (_view.TransactionMode)
             {
@@ -424,7 +425,7 @@ namespace RaptorDB.Views
             var ret = new Result<TSchema>();
             int skip = start;
             int cc = 0;
-            WAHBitArray del = _deletedRows.GetBits();
+            WahBitArray del = _deletedRows.GetBits();
             ret.TotalCount = totalviewrows - (int)del.CountOnes();
 
             var order = SortBy(orderby);
@@ -484,7 +485,7 @@ namespace RaptorDB.Views
         /// <summary>
         /// Adds item with idnex 'order[idx]' to 'rows' if skipped == 0 and not in del 
         /// </summary>
-        private void OutputRow(List<TSchema> rows, int idx, int count, ref int skip, ref int currentCount, WAHBitArray del, List<int> order)
+        private void OutputRow(List<TSchema> rows, int idx, int count, ref int skip, ref int currentCount, WahBitArray del, List<int> order)
         {
             int i = order[idx];
             if (del.Get(i) == false)
@@ -500,7 +501,7 @@ namespace RaptorDB.Views
             }
         }
 
-        private void extractsortrowobject(WAHBitArray ba, int count, List<int> orderby, List<TSchema> rows, ref int skip, ref int c, int idx)
+        private void extractsortrowobject(WahBitArray ba, int count, List<int> orderby, List<TSchema> rows, ref int skip, ref int c, int idx)
         {
             int i = orderby[idx];
             if (ba.Get(i))
@@ -536,10 +537,10 @@ namespace RaptorDB.Views
                 foreach (var v in _indexes)
                 {
                     _log.Debug("Shutting down view index : " + v.Key);
-                    v.Value.Shutdown();
+                    v.Value.Dispose();
                 }
                 // save deletedbitmap
-                _deletedRows.Shutdown();
+                _deletedRows.Dispose();
 
                 _viewData.Shutdown();
 
@@ -567,7 +568,7 @@ namespace RaptorDB.Views
 
         #region [  private methods  ]
 
-        private Result<TSchema> ReturnRows(WAHBitArray ba, List<TSchema> trows, int start, int count, List<int> orderby, bool descending)
+        private Result<TSchema> ReturnRows(WahBitArray ba, List<TSchema> trows, int start, int count, List<int> orderby, bool descending)
         {
             DateTime dt = FastDateTime.Now;
             List<TSchema> rows = new List<TSchema>();
@@ -674,7 +675,8 @@ namespace RaptorDB.Views
 
         private void CreateLoadIndexes(ViewRowDefinition viewRowDefinition)
         {
-            _indexes.Add(_docid, new TypeIndexes<Guid>(_path, _docid, 16/*, allowDups: !_view.DeleteBeforeInsert*/));
+            idIndex = new TypeIndexes<Guid>(_path, _docid, 16/*, allowDups: !_view.DeleteBeforeInsert*/);
+            _indexes.Add(_docid, idIndex);
             // load indexes
             foreach (var c in viewRowDefinition.Columns)
             {
@@ -703,7 +705,7 @@ namespace RaptorDB.Views
 
         private void IndexRow(Guid id, object[] row, int rownum)
         {
-            _indexes[_docid].Set(id, rownum);
+            idIndex.Set(id, rownum);
             for (int i = 0; i < row.Length; i++)
             {
                 _indexes[_colnames[i]].Set(row[i], rownum);
@@ -714,13 +716,19 @@ namespace RaptorDB.Views
         private void DeleteRowsWith(Guid guid)
         {
             // find bitmap for guid column
-            WAHBitArray gc = QueryColumnExpression(_docid, RDBExpression.Equal, guid);
+            WahBitArray gc = QueryColumnExpression(_docid, RDBExpression.Equal, guid);
             _deletedRows.InPlaceOR(gc);
         }
 
-        private WAHBitArray QueryColumnExpression(string colname, RDBExpression exp, object from)
+        private WahBitArray QueryColumnExpression(string colname, RDBExpression exp, object from)
         {
-            return _indexes[colname].Query(exp, from, _viewData.Count());
+            var index = _indexes[colname]; //.Query(exp, from, _viewData.Count());
+            var qia = new QueryIA()
+            {
+                Expression = exp,
+                Key = from
+            };
+            return index.Accept(qia);
         }
 
         SafeDictionary<string, Expression<Predicate<TSchema>>> _lambdacache = new SafeDictionary<string, Expression<Predicate<TSchema>>>();
@@ -749,12 +757,12 @@ namespace RaptorDB.Views
                 totcount = TotalCount();
             else
             {
-                WAHBitArray ba = new WAHBitArray();
+                WahBitArray ba = new WahBitArray();
 
                 QueryVisitor qv = new QueryVisitor(QueryColumnExpression);
                 qv.Visit(filter.Body);
                 var delbits = _deletedRows.GetBits();
-                ba = ((WAHBitArray)qv._bitmap.Pop()).AndNot(delbits);
+                ba = ((WahBitArray)qv._bitmap.Pop()).AndNot(delbits);
 
                 totcount = (int)ba.CountOnes();
             }
@@ -782,35 +790,36 @@ namespace RaptorDB.Views
         {
             if (string.IsNullOrEmpty(sortcol))
                 return null;
+            // TODO: sorting
+            throw new NotImplementedException("sorting not implemented");
+            //string col = _colnames.FirstOrDefault(c => sortcol.StartsWith(sortcol, StringComparison.InvariantCultureIgnoreCase));
+            //if (col == null)
+            //{
+            //    _log.Debug("sort column not recognized : " + sortcol);
+            //    return null;
+            //}
 
-            string col = _colnames.FirstOrDefault(c => sortcol.StartsWith(sortcol, StringComparison.InvariantCultureIgnoreCase));
-            if (col == null)
-            {
-                _log.Debug("sort column not recognized : " + sortcol);
-                return null;
-            }
+            //DateTime dt = FastDateTime.Now;
 
-            DateTime dt = FastDateTime.Now;
+            //List<int> sortlist;
+            //if (!_sortcache.TryGetValue(col, out sortlist))
+            //{
+            //    sortlist = new List<int>();
+            //    int count = _viewData.Count();
+            //    IIndex idx = _indexes[col];
+            //    object[] keys = idx.GetKeys();
+            //    Array.Sort(keys);
 
-            List<int> sortlist;
-            if (!_sortcache.TryGetValue(col, out sortlist))
-            {
-                sortlist = new List<int>();
-                int count = _viewData.Count();
-                IIndex idx = _indexes[col];
-                object[] keys = idx.GetKeys();
-                Array.Sort(keys);
-
-                foreach (var k in keys)
-                {
-                    var bi = idx.Query(RDBExpression.Equal, k, count).GetBitIndexes();
-                    foreach (var i in bi)
-                        sortlist.Add(i);
-                }
-                _sortcache.Add(col, sortlist);
-            }
-            _log.Debug("Sort column = " + col + ", time (ms) = " + FastDateTime.Now.Subtract(dt).TotalMilliseconds);
-            return sortlist;
+            //    foreach (var k in keys)
+            //    {
+            //        var bi = idx.Query(RDBExpression.Equal, k, count).GetBitIndexes();
+            //        foreach (var i in bi)
+            //            sortlist.Add(i);
+            //    }
+            //    _sortcache.Add(col, sortlist);
+            //}
+            //_log.Debug("Sort column = " + col + ", time (ms) = " + FastDateTime.Now.Subtract(dt).TotalMilliseconds);
+            //return sortlist;
         }
 
         public ViewRowDefinition GetSchema()
@@ -847,7 +856,7 @@ namespace RaptorDB.Views
             int count = qv._bitmap.Count;
             if (count > 0)
             {
-                WAHBitArray qbits = (WAHBitArray)qv._bitmap.Pop();
+                WahBitArray qbits = (WahBitArray)qv._bitmap.Pop();
                 _deletedRows.InPlaceOR(qbits);
                 count = (int)qbits.CountOnes();
             }
@@ -892,6 +901,36 @@ namespace RaptorDB.Views
         private void InvalidateSortCache()
         {
             _sortcache = new SafeDictionary<string, List<int>>();
+        }
+
+        class QueryIA : IIndexAcceptable<WahBitArray>
+        {
+            public RDBExpression Expression;
+            public object Key;
+            public WahBitArray Accept<T>(IIndex<T> item)
+            {
+                if (!(Key is T)) return null;
+                var key = (T)Key;
+                switch (Expression)
+                {
+                    case RDBExpression.Equal:
+                        return (item as IEqualsQueryIndex<T>)?.QueryEquals(key);
+                    case RDBExpression.Greater:
+                        return (item as IComparisonIndex<T>)?.QueryGreater(key);
+                    case RDBExpression.GreaterEqual:
+                        return (item as IComparisonIndex<T>)?.QueryGreaterEquals(key);
+                    case RDBExpression.Less:
+                        return (item as IComparisonIndex<T>)?.QueryLess(key);
+                    case RDBExpression.LessEqual:
+                        return (item as IComparisonIndex<T>)?.QueryLessEquals(key);
+                    case RDBExpression.NotEqual:
+                        return (item as IEqualsQueryIndex<T>)?.QueryNotEquals(key);
+                    case RDBExpression.Contains:
+                        return (item as IContainsIndex<T>)?.QueryContains(key);
+                    default:
+                        return null;
+                }
+            }
         }
     }
 }

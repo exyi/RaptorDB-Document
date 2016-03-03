@@ -60,39 +60,75 @@
 .class public abstract auto ansi sealed beforefieldinit GenericPointerHelpers.GenericPointerHelper
        extends [mscorlib]System.Object
 {
-  .method public hidebysig static !!T  Read<T>(void* ptr) cil managed
+  .method public hidebysig static !!T  Read<T>(void* ptr) cil managed aggressiveinlining
   {
-    // Code size       6 (0x6)
-    .maxstack  8
-    IL_0000:  nop         
-	IL_0001:  ldarg.0     
-	IL_0002:  ldobj !!T
-	IL_0003:  ret 
-  } // end of method GenericPointerHelper::Read
+    .maxstack 2
+	ldarg.0     
+	ldobj !!T
+	ret 
+  }
+
+  .method public hidebysig static !!T ReadLimited<T>(void* 'ptr', unsigned int32 'index', unsigned int32 'length') cil managed aggressiveinlining
+  {
+	.maxstack 8
+	.locals init (
+		[0] !!T
+	)
+	
+	ldloca.s 0   
+	dup
+	initobj !!T
+	ldarg.1
+	add
+	ldarg.0
+	ldarg.2    
+	unaligned. 1
+	cpblk
+	ldloc.0
+	ret          
+  }
+
+
+  .method public hidebysig static !!T* AddrOf<T>(!!T& 'refvalue') cil managed aggressiveinlining
+  {
+    .maxstack 1
+    ldarg.0
+    ret
+  }
 
   .method public hidebysig static void  Write<T>(void* ptr,
-                                                 !!T 'value') cil managed
+                                                 !!T 'value') cil managed aggressiveinlining
   {
-    // Code size       6 (0x6)
-    .maxstack  8
-    IL_0000:  ldarg.0
-    IL_0001:  ldarg.1
-	IL_0002:  stobj !!T
-    IL_0003:  ret
-  } // end of method GenericPointerHelper::Write
+    .maxstack 2
+    ldarg.0
+    ldarg.1
+    stobj !!T
+    ret
+  }
 
-  .method public hidebysig static int32  SizeOf<T>() cil managed
+  .method public hidebysig static void WriteLimited<T>(void* ptr, !!T 'value', unsigned int32 'index', unsigned int32 'length') cil managed aggressiveinlining
   {
-    // Code size       6 (0x6)
+	.maxstack 8
+	ldarg.0
+	ldarga.s 1
+	ldarg.2
+	add
+	ldarg.3
+	unaligned. 1
+	cpblk
+	ret
+  }
+
+  .method public hidebysig static int32  SizeOf<T>() cil managed aggressiveinlining
+  {
     .maxstack  8
     IL_0000: sizeof !!T
     IL_0003: ret
-  } // end of method GenericPointerHelper::Write
+  }
 
   
-  .method public hidebysig static void CopyBytes(void* from, void* 'to', unsigned int32 'count') cil managed
+  .method public hidebysig static void CopyBytes(void* from, void* 'to', unsigned int32 'count') cil managed aggressiveinlining
   {
-    // Code size       6 (0x6)
     .maxstack  8
     ldarg.1
     ldarg.0
@@ -102,9 +138,8 @@
     ret
   }
 
-  .method public hidebysig static void CopyBytesAlligned(void* from, void* 'to', unsigned int32 'count') cil managed
+  .method public hidebysig static void CopyBytesAlligned(void* from, void* 'to', unsigned int32 'count') cil managed aggressiveinlining
   {
-    // Code size       6 (0x6)
     .maxstack  8
     ldarg.1
     ldarg.0
@@ -113,9 +148,8 @@
     ret
   }
 
-  .method public hidebysig static void InitMemory(void* 'ptr', unsigned int32 'count', unsigned int8 'value') cil managed
+  .method public hidebysig static void InitMemory(void* 'ptr', unsigned int32 'count', unsigned int8 'value') cil managed aggressiveinlining
   {
-    // Code size       6 (0x6)
     .maxstack  8
     ldarg.0
     ldarg.2

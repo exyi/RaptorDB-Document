@@ -285,7 +285,7 @@ namespace RaptorDB
             File.WriteAllText(_Path + "RaptorDB.config", fastJSON.JSON.ToNiceJSON(new Global(), new fastJSON.JSONParameters { UseExtensions = false }));
             if (_cron != null)
                 _cron.Stop();
-            _fulltextindex.Shutdown();
+            _fulltextindex.Dispose();
 
             _log.Debug("Shutting down");
             _saveTimer.Stop();
@@ -461,7 +461,7 @@ namespace RaptorDB
 
         private void DeleteReplicate(Guid docid)
         {
-            bool b = _objStore.DeleteReplicated(docid);
+            _objStore.DeleteReplicated(docid);
             _viewManager.Delete(docid);
         }
 
@@ -630,7 +630,7 @@ namespace RaptorDB
         /// <returns></returns>
         public int[] FullTextSearch(string filter)
         {
-            var wbmp = _fulltextindex.Query(filter, _objStore.RecordCount());
+            var wbmp = _fulltextindex.QueryContains(filter);
             List<int> a = new List<int>();
             a.AddRange(wbmp.GetBitIndexes());
 
@@ -761,9 +761,9 @@ namespace RaptorDB
         /// </summary>
         /// <param name="docid"></param>
         /// <returns></returns>
-        public int[] FetchHistory(Guid docid)
+        public IEnumerable<int> FetchHistory(Guid docid)
         {
-            return _objStore.GetHistory(docid);
+            return _objStore.GetDuplicates(docid);
         }
 
         /// <summary>
@@ -771,9 +771,9 @@ namespace RaptorDB
         /// </summary>
         /// <param name="fileid"></param>
         /// <returns></returns>
-        public int[] FetchBytesHistory(Guid fileid)
+        public IEnumerable<int> FetchBytesHistory(Guid fileid)
         {
-            return _fileStore.GetHistory(fileid);
+            return _fileStore.GetDuplicates(fileid);
         }
 
         /// <summary>

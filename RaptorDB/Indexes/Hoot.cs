@@ -65,9 +65,9 @@ namespace RaptorDB
             AddtoIndex(recordnumber, text);
         }
 
-        public WAHBitArray Query(string filter, int maxsize)
+        public WahBitArray Query(string filter)
         {
-            return ExecutionPlan(filter, maxsize);
+            return ExecutionPlan(filter, _docs.RecordCount());
         }
 
         public int Index(Document doc, bool deleteold)
@@ -97,14 +97,14 @@ namespace RaptorDB
 
         public IEnumerable<int> FindRows(string filter)
         {
-            WAHBitArray bits = ExecutionPlan(filter, _docs.RecordCount());
+            WahBitArray bits = ExecutionPlan(filter, _docs.RecordCount());
             // enumerate records
             return bits.GetBitIndexes();
         }
 
         public IEnumerable<Document> FindDocuments(string filter)
         {
-            WAHBitArray bits = ExecutionPlan(filter, _docs.RecordCount());
+            WahBitArray bits = ExecutionPlan(filter, _docs.RecordCount());
             // enumerate documents
             foreach (int i in bits.GetBitIndexes())
             {
@@ -119,7 +119,7 @@ namespace RaptorDB
 
         public IEnumerable<string> FindDocumentFileNames(string filter)
         {
-            WAHBitArray bits = ExecutionPlan(filter, _docs.RecordCount());
+            WahBitArray bits = ExecutionPlan(filter, _docs.RecordCount());
             // enumerate documents
             foreach (int i in bits.GetBitIndexes())
             {
@@ -165,17 +165,17 @@ namespace RaptorDB
 
         #region [  P R I V A T E   M E T H O D S  ]
 
-        private WAHBitArray ExecutionPlan(string filter, int maxsize)
+        private WahBitArray ExecutionPlan(string filter, int maxsize)
         {
             //_log.Debug("query : " + filter);
             DateTime dt = FastDateTime.Now;
             // query indexes
             string[] words = filter.Split(' ');
             bool defaulttoand = true;
-            if (filter.IndexOfAny(new char[] { '+', '-' }, 0) > 0)
+            if (filter.IndexOfAny(new char[] { '+', '-' }, 0) >= 0)
                 defaulttoand = false;
 
-            WAHBitArray bits = WAHBitArray.Fill(maxsize);            
+            WahBitArray bits = null;
 
             foreach (string s in words)
             {
@@ -201,7 +201,7 @@ namespace RaptorDB
 
                 if (s.Contains("*") || s.Contains("?"))
                 {
-                    WAHBitArray wildbits = null;
+                    WahBitArray wildbits = null;
                     // do wildcard search
                     Regex reg = new Regex("^" + s.Replace("*", ".*").Replace("?", "."), RegexOptions.IgnoreCase);
                     foreach (string key in _words.Keys())
@@ -209,7 +209,7 @@ namespace RaptorDB
                         if (reg.IsMatch(key))
                         {
                             _words.TryGetValue(key, out c);
-                            WAHBitArray ba = _bitmaps.GetBitmap(c);
+                            WahBitArray ba = _bitmaps.GetBitmap(c);
 
                             wildbits = DoBitOperation(wildbits, ba, OPERATION.OR, maxsize);
                         }
@@ -227,15 +227,15 @@ namespace RaptorDB
                 else if (_words.TryGetValue(word.ToLowerInvariant(), out c))
                 {
                     // bits logic
-                    WAHBitArray ba = _bitmaps.GetBitmap(c);
+                    WahBitArray ba = _bitmaps.GetBitmap(c);
                     bits = DoBitOperation(bits, ba, op, maxsize);
                 }
             }
             //if (bits == null)
-            //    return new WAHBitArray();
+            //    return new WahBitArray();
 
             // remove deleted docs
-            WAHBitArray ret;
+            WahBitArray ret;
             if (_docMode)
                 ret = bits.AndNot(_deleted.GetBits());
             else
@@ -244,7 +244,7 @@ namespace RaptorDB
             return ret;
         }
 
-        private static WAHBitArray DoBitOperation(WAHBitArray bits, WAHBitArray c, OPERATION op, int maxsize)
+        private static WahBitArray DoBitOperation(WahBitArray bits, WahBitArray c, OPERATION op, int maxsize)
         {
             if (bits != null)
             {
@@ -257,7 +257,7 @@ namespace RaptorDB
                         bits = bits.Or(c);
                         break;
                     case OPERATION.ANDNOT:
-                        bits = bits.And(c.Not(maxsize));
+                        bits = bits.And(c.Not());
                         break;
                 }
             }
@@ -455,7 +455,7 @@ namespace RaptorDB
         }
         #endregion
 
-        public void Shutdown()
+        public virtual void Dispose()
         {
             lock (_lock)
             {
@@ -464,7 +464,7 @@ namespace RaptorDB
                 if (_docMode)
                 {
                     _docs.Shutdown();
-                    _deleted.Shutdown();
+                    _deleted.Dispose();
                 }
             }
         }

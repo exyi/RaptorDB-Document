@@ -260,7 +260,7 @@ namespace RaptorDB.Common
         /// </summary>
         /// <param name="docid"></param>
         /// <returns></returns>
-        int[] FetchHistory(Guid docid);
+        IEnumerable<int> FetchHistory(Guid docid);
 
         /// <summary>
         /// Fetch the change history for a document with dates
@@ -274,7 +274,7 @@ namespace RaptorDB.Common
         /// </summary>
         /// <param name="fileid"></param>
         /// <returns></returns>
-        int[] FetchBytesHistory(Guid fileid);
+        IEnumerable<int> FetchBytesHistory(Guid fileid);
 
         /// <summary>
         /// Fetch a change history for a file with dates

@@ -119,7 +119,7 @@ namespace RaptorDB
             }
             else
             {
-                if (FullTextColumns.Contains(p.Name) || FullTextColumns.Contains(p.Name.ToLower()) || p.GetCustomAttributes(typeof(FullTextAttribute), true).Length > 0)
+                if (FullTextColumns.Contains(p.Name) || FullTextColumns.Contains(p.Name.ToLower()) || Attribute.IsDefined(p, typeof(FullTextAttribute), true))
                     return new FullTextIndexColumnDefinition();
 
                 var cs = p.GetCustomAttributes(typeof(CaseInsensitiveAttribute), true).Length > 0 ||
@@ -164,7 +164,7 @@ namespace RaptorDB
             BackgroundIndexing = true;
             IndexDefinitions = new Dictionary<string, IViewColumnIndexDefinition>()
             {
-                {"docid", new MGIndexColumnDefinition<Guid>(16) }
+                {"docid", new MMIndexColumnDefinition<Guid>() }
             };
         }
 

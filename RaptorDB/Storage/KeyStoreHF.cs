@@ -81,7 +81,7 @@ namespace RaptorDB
             lock (_lock)
             {
                 int alloc;
-                if (_keys.Get(key, out alloc))
+                if (_keys.GetFirst(key, out alloc))
                 {
                     AllocationBlock ab = FillAllocationBlock(alloc);
                     if (ab.deleteKey == false)
@@ -126,7 +126,7 @@ namespace RaptorDB
 
                 AllocationBlock ab = null;
                 int firstblock = 0;
-                if (_keys.Get(key, out firstblock))// key exists already
+                if (_keys.GetFirst(key, out firstblock))// key exists already
                     ab = FillAllocationBlock(firstblock);
 
                 SaveNew(key, k, obj);
@@ -145,7 +145,7 @@ namespace RaptorDB
             lock (_lock)
             {
                 int alloc;
-                if (_keys.Get(key, out alloc))
+                if (_keys.GetFirst(key, out alloc))
                 {
                     if (_isDirty == false)
                         WriteDirtyFile();
@@ -199,7 +199,7 @@ namespace RaptorDB
                         Directory.Delete(_Path + "old", true);
                     Directory.CreateDirectory(_Path + "old");
                     _datastore.Shutdown();
-                    _keys.Shutdown();
+                    _keys.Dispose();
                     _log.Debug("Moving files...");
                     foreach (var f in Directory.GetFiles(_Path, "*.*"))
                         File.Move(f, _Path + "old" + _S + Path.GetFileName(f));
@@ -233,7 +233,7 @@ namespace RaptorDB
             lock (_lock)
             {
                 int i = 0;
-                return _keys.Get(key, out i);
+                return _keys.GetFirst(key, out i);
             }
         }
 
@@ -241,7 +241,7 @@ namespace RaptorDB
         {
             _datastore.Shutdown();
             if (_keys != null)
-                _keys.Shutdown();
+                _keys.Dispose();
 
             if (File.Exists(_Path + _dirtyFilename))
                 File.Delete(_Path + _dirtyFilename);
@@ -427,7 +427,7 @@ namespace RaptorDB
 
                 keys = new MGIndex<string>(_Path, "keys.idx", 255, Global.PageItemCount, false);
 
-                WAHBitArray visited = new WAHBitArray();
+                WahBitArray visited = new WahBitArray();
 
                 int c = _datastore.NumberofBlocks();
 
@@ -453,7 +453,7 @@ namespace RaptorDB
                     bool freelast = false;
                     AllocationBlock old = null;
 
-                    if (keys.Get(ab.key, out last))
+                    if (keys.GetFirst(ab.key, out last))
                     {
                         old = this.FillAllocationBlock(last);
                         freelast = true;
@@ -504,7 +504,7 @@ namespace RaptorDB
                 _log.Debug("Shutting down files and index");
                 _datastore.Shutdown();
                 keys.SaveIndex();
-                keys.Shutdown();
+                keys.Dispose();
             }
         }
         #endregion
